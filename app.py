@@ -10,9 +10,12 @@ from PIL import Image
 
 # --- Charger les clés depuis .env ---
 load_dotenv()
+PLANTNET_API_KEY = os.getenv("PLANTNET_API_KEY")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+
 # --- Test de connectivité aux API ---
 try:
-    test_resp = requests.get("https://my-api.plantnet.org", timeout=5)
+    test_resp = requests.get("https://my-api.plantnet.org/v2/identify/all", timeout=5)
     st.success("✅ Connexion à PlantNet OK")
 except Exception as e:
     st.error("❌ Connexion à PlantNet impossible.")
@@ -24,9 +27,6 @@ try:
 except Exception as e:
     st.error("❌ Connexion à Mistral impossible.")
     st.text(str(e))
-
-PLANTNET_API_KEY = os.getenv("PLANTNET_API_KEY")
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
 # --- Chemin du fichier de cache ---
 CACHE_PATH = "cache_virtues.json"
@@ -48,7 +48,7 @@ if 'retry_after' not in st.session_state:
 st.set_page_config(page_title="Plante + Vertus", layout="centered")
 st.title("📷🌿 Identification de plante + vertus")
 
-uploaded_file = st.file_uploader("Choisir ou prendre une photo", type=["jpg","jpeg","png"])
+uploaded_file = st.file_uploader("Choisir ou prendre une photo", type=["jpg", "jpeg", "png"])
 if not uploaded_file:
     st.info("En attente d'une photo...")
     st.stop()
