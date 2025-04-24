@@ -10,6 +10,21 @@ from PIL import Image
 
 # --- Charger les clés depuis .env ---
 load_dotenv()
+# --- Test de connectivité aux API ---
+try:
+    test_resp = requests.get("https://my-api.plantnet.org", timeout=5)
+    st.success("✅ Connexion à PlantNet OK")
+except Exception as e:
+    st.error("❌ Connexion à PlantNet impossible.")
+    st.text(str(e))
+
+try:
+    test_resp = requests.get("https://api.mistral.ai/v1/", timeout=5)
+    st.success("✅ Connexion à Mistral OK")
+except Exception as e:
+    st.error("❌ Connexion à Mistral impossible.")
+    st.text(str(e))
+
 PLANTNET_API_KEY = os.getenv("PLANTNET_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
