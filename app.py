@@ -7,7 +7,6 @@ import mimetypes
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
-import geocoder
 
 # --- Charger les clés depuis .env ---
 load_dotenv()
@@ -80,15 +79,8 @@ if second:
     prob2 = round(second["score"] * 100, 1)
     st.info(f"🔎 Deuxième possibilité : **{plant_name_2}**{common_name_display_2} ({prob2}%)")
 
-# Option pour enregistrer le point GPS avec le nom commun
-if common_names:
-    if st.button("📍 Enregistrer l'emplacement avec le nom de la plante"):
-        g = geocoder.ip('me')
-        if g.ok:
-            location = g.latlng
-            st.success(f"Point GPS marqué pour : {common_names[0]} à {location}")
-        else:
-            st.warning("Impossible de récupérer la localisation actuelle.")
+# Info GPS désactivée sur Streamlit Cloud
+st.info("📍 Marquage GPS non disponible sur la version en ligne de Streamlit. Fonction active uniquement en version locale ou mobile.")
 
 # --- Vérifier le cache ---
 if plant_name in cache:
