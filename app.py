@@ -12,21 +12,7 @@ from PIL import Image
 load_dotenv()
 PLANTNET_API_KEY = os.getenv("PLANTNET_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
-
-# --- Test de connectivité aux API ---
-try:
-    test_resp = requests.get("https://my-api.plantnet.org/v2/identify/all", timeout=5)
-    st.success("✅ Connexion à PlantNet OK")
-except Exception as e:
-    st.error("❌ Connexion à PlantNet impossible.")
-    st.text(str(e))
-
-try:
-    test_resp = requests.get("https://api.mistral.ai/v1/", timeout=5)
-    st.success("✅ Connexion à Mistral OK")
-except Exception as e:
-    st.error("❌ Connexion à Mistral impossible.")
-    st.text(str(e))
+PLANTID_API_KEY = os.getenv("PLANTID_API_KEY")  # Clé API Plant.id
 
 # --- Chemin du fichier de cache ---
 CACHE_PATH = "cache_virtues.json"
@@ -48,7 +34,7 @@ if 'retry_after' not in st.session_state:
 st.set_page_config(page_title="Plante + Vertus", layout="centered")
 st.title("📷🌿 Identification de plante + vertus")
 
-uploaded_file = st.file_uploader("Choisir ou prendre une photo", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Choisir ou prendre une photo", type=["jpg","jpeg","png"])
 if not uploaded_file:
     st.info("En attente d'une photo...")
     st.stop()
@@ -59,40 +45,47 @@ image = Image.open(io.BytesIO(image_bytes))
 st.image(image, caption="Image sélectionnée", use_container_width=True)
 
 # --- Appel PlantNet ---
-with st.spinner("🔍 Identification en cours..."):
-    url = f"https://my-api.plantnet.org/v2/identify/all?api-key={PLANTNET_API_KEY}"
-    mime_type = mimetypes.guess_type(uploaded_file.name)[0] or "image/jpeg"
-    files = {"images": (uploaded_file.name, io.BytesIO(image_bytes), mime_type)}
-    data = {"organs": "leaf"}
-    resp = requests.post(url, files=files, data=data)
+use_plantnet = True
+try:
+    with st.spinner("🔍 Identification en cours..."):
+        url = f"https://my-api.plantnet.org/v2/identify/all?api-key={PLANTNET_API_KEY}"
+        mime_type = mimetypes.guess_type(uploaded_file.name)[0] or "image/jpeg"
+        files = {"images": (uploaded_file.name, io.BytesIO(image_bytes), mime_type)}
+        data = {"organs": "leaf"}
+        resp = requests.post(url, files=files, data=data)
+        resp.raise_for_status()
 
-if resp.status_code != 200:
-    st.error(f"Erreur PlantNet {resp.status_code}")
-    st.text(resp.text)
-    st.stop()
+        data_net = resp.json()
+        if not data_net.get("results"):
+            raise ValueError("Aucun résultat PlantNet")
+except Exception as err:
+    st.warning(f"⚠️ PlantNet indisponible : {err}\n–> Bascule sur Plant.id")
+    use_plantnet = False
 
-j = resp.json()
-if not j.get("results"):
-    st.error("❌ Aucune plante identifiée. Essaie une autre image.")
-    st.stop()
-
-# Affichage du top 2 résultats avec pourcentages et noms communs
-first = j["results"][0]
-second = j["results"][1] if len(j["results"]) > 1 else None
-
-plant_name = first["species"]["scientificNameWithoutAuthor"]
-common_names = first["species"].get("commonNames", [])
-common_name_display = f" ({common_names[0]})" if common_names else ""
-
-prob1 = round(first["score"] * 100, 1)
-st.success(f"✅ Plante identifiée : **{plant_name}**{common_name_display} ({prob1}%)")
-
-if second:
-    plant_name_2 = second["species"]["scientificNameWithoutAuthor"]
-    common_names_2 = second["species"].get("commonNames", [])
-    common_name_display_2 = f" ({common_names_2[0]})" if common_names_2 else ""
-    prob2 = round(second["score"] * 100, 1)
-    st.info(f"🔎 Deuxième possibilité : **{plant_name_2}**{common_name_display_2} ({prob2}%)")
+if use_plantnet:
+    first = data_net["results"][0]
+    plant_name = first["species"]["scientificNameWithoutAuthor"]
+    common_names = first["species"].get("commonNames", [])
+    common_name_display = f" ({common_names[0]})" if common_names else ""
+    prob1 = round(first["score"] * 100, 1)
+    st.success(f"✅ Plante identifiée : **{plant_name}**{common_name_display} ({prob1}%)")
+else:
+    # --- Appel Plant.id ---
+    plantid_key = os.getenv("PLANTID_API_KEY")
+    files2 = {"images": image_bytes}
+    headers2 = {"Api-Key": plantid_key}
+    resp2 = requests.post(
+        "https://api.plant.id/v2/identify",
+        files=files2,
+        headers=headers2,
+        timeout=15
+    )
+    resp2.raise_for_status()
+    pid = resp2.json()
+    suggestion = pid["suggestions"][0]
+    plant_name = suggestion["plant_name"]
+    score = round(suggestion["probability"]*100,1)
+    st.success(f"✅ Plant.id : {plant_name} ({score}%)")
 
 # Info GPS désactivée sur Streamlit Cloud
 st.info("📍 Marquage GPS non disponible sur la version en ligne de Streamlit. Fonction active uniquement en version locale ou mobile.")
@@ -161,3 +154,4 @@ try:
 except Exception as e:
     st.error("❌ Erreur lors de l’appel à Mistral.")
     st.exception(e)
+
