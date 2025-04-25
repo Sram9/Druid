@@ -1,3 +1,4 @@
+
 import streamlit as st
 import requests
 import os
@@ -72,8 +73,13 @@ if use_plantnet:
         common_names = result["species"].get("commonNames", [])
         common_name = common_names[0] if common_names else "(nom commun inconnu)"
         prob = round(result["score"] * 100, 1)
-        st.markdown(f"**{idx}. {sci_name}** — *{common_name}* ({prob}%)")
-    plant_name = top3[0]["species"].get("scientificNameWithoutAuthor", "?")
+
+        if idx == 1:
+            st.markdown(f"**{idx}. {sci_name}** — *{common_name}* ({prob}%)")
+            plant_name = sci_name
+        else:
+            mistral_url = f"?plant_choice={sci_name}"
+            st.markdown(f"[{idx}. {sci_name} — *{common_name}* ({prob}%)]({mistral_url})")
 else:
     # Identification via Plant.id
     with st.spinner("🔍 Identification Plant.id en cours..."):
@@ -108,8 +114,14 @@ if len(st.session_state.mistral_calls) >= 3:
     st.error("🚦 Limite de 3 requêtes Mistral/min atteinte. Rafraîchis dans un instant.")
     st.stop()
 
+# --- Prompt personnalisé depuis URL ---
+import urllib.parse
+query_params = st.experimental_get_query_params()
+if "plant_choice" in query_params:
+    plant_name = query_params["plant_choice"][0]
+
 # --- Appel Mistral pour les vertus ---
-prompt = f"Cette plante est-elle comestible ? Quelles sont ses vertus médicinales et comment l'utiliser ? Réponds pour : {plant_name}."
+prompt = f"Quel est le nom commun de cette plante ? Cette plante est-elle comestible ? Quelles sont ses vertus médicinales et comment l'utiliser ? Réponds pour : {plant_name}."
 st.text(f"🔎 Prompt : {prompt}")
 headers_m = {"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"}
 json_data = {"model": "mistral-tiny", "messages": [{"role": "user", "content": prompt}], "max_tokens": 400}
@@ -128,4 +140,3 @@ try:
 except Exception as e:
     st.error("❌ Erreur lors de l’appel à Mistral.")
     st.text(str(e))
-
