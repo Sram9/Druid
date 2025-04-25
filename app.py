@@ -117,7 +117,7 @@ if len(st.session_state.mistral_calls) >= 3:
 
 # --- Appel Mistral pour les vertus ---
 prompt = f"Quel est le nom courant de cette plante ? Cette plante est-elle comestible ? Quelles sont ses vertus médicinales et comment l'utiliser ? Réponds pour : {plant_name}."
-st.text(f"🔎 Prompt : {prompt}")
+
 headers_m = {"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"}
 json_data = {"model": "mistral-tiny", "messages": [{"role": "user", "content": prompt}], "max_tokens": 400}
 
@@ -135,6 +135,7 @@ try:
 except Exception as e:
     st.error("❌ Erreur lors de l’appel à Mistral.")
     st.text(str(e))
+
 
 
 
