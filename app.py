@@ -1,4 +1,3 @@
-
 import streamlit as st
 import requests
 import os
@@ -8,6 +7,7 @@ import mimetypes
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
+import urllib.parse
 
 # --- Initialisation de la page Streamlit (doit être la première commande) ---
 st.set_page_config(page_title="Plante + Vertus", layout="centered")
@@ -78,7 +78,7 @@ if use_plantnet:
             st.markdown(f"**{idx}. {sci_name}** — *{common_name}* ({prob}%)")
             plant_name = sci_name
         else:
-            mistral_url = f"?plant_choice={sci_name}"
+            mistral_url = f"?plant_choice={urllib.parse.quote(sci_name)}"
             st.markdown(f"[{idx}. {sci_name} — *{common_name}* ({prob}%)]({mistral_url})")
 else:
     # Identification via Plant.id
@@ -115,8 +115,7 @@ if len(st.session_state.mistral_calls) >= 3:
     st.stop()
 
 # --- Prompt personnalisé depuis URL ---
-import urllib.parse
-query_params = st.experimental_get_query_params()
+query_params = st.query_params
 if "plant_choice" in query_params:
     plant_name = query_params["plant_choice"][0]
 
@@ -140,3 +139,4 @@ try:
 except Exception as e:
     st.error("❌ Erreur lors de l’appel à Mistral.")
     st.text(str(e))
+
