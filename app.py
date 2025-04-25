@@ -19,6 +19,7 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
 # --- Chemin du fichier de cache ---
 CACHE_PATH = "cache_virtues.json"
+ARCHIVES_PATH = "archives.json"
 
 # --- Charger ou initialiser le cache ---
 if os.path.exists(CACHE_PATH):
@@ -26,6 +27,13 @@ if os.path.exists(CACHE_PATH):
         cache = json.load(f)
 else:
     cache = {}
+
+# --- Charger ou initialiser les archives ---
+if os.path.exists(ARCHIVES_PATH):
+    with open(ARCHIVES_PATH, "r", encoding="utf-8") as f:
+        archives = json.load(f)
+else:
+    archives = []
 
 # --- Suivi des appels Mistral dans session_state ---
 if 'mistral_calls' not in st.session_state:
@@ -99,8 +107,33 @@ plant_name = st.session_state.get("plant_name")
 if not plant_name:
     st.stop()
 
-# Info GPS désactivée
-st.info("📍 Marquage GPS non disponible sur le web. Utilisable en local/mobile.")
+# --- Bouton pour archiver avec géolocalisation (HTML5) ---
+st.markdown("---")
+st.markdown("### 📍 Archiver cette plante avec localisation")
+get_location = """
+<script>
+navigator.geolocation.getCurrentPosition(
+  function(position) {
+    const coords = position.coords.latitude + "," + position.coords.longitude;
+    const input = window.parent.document.querySelector('input[data-testid="stTextInput"]');
+    if (input) { input.value = coords; input.dispatchEvent(new Event('input', { bubbles: true })); }
+  }
+);
+</script>
+"""
+st.components.v1.html(get_location)
+coords = st.text_input("Coordonnées GPS (automatiques ou manuelles)")
+
+if st.button("✅ Archiver cette plante"):
+    now = datetime.now().isoformat()
+    archives.append({
+        "nom": plant_name,
+        "date": now,
+        "coords": coords
+    })
+    with open(ARCHIVES_PATH, "w", encoding="utf-8") as f:
+        json.dump(archives, f, ensure_ascii=False, indent=2)
+    st.success("🌱 Plante archivée avec succès !")
 
 # --- Vérifier le cache pour les vertus ---
 if plant_name in cache:
@@ -135,6 +168,7 @@ try:
 except Exception as e:
     st.error("❌ Erreur lors de l’appel à Mistral.")
     st.text(str(e))
+
 
 
 
