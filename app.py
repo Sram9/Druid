@@ -135,6 +135,32 @@ if st.button("✅ Archiver cette plante"):
         json.dump(archives, f, ensure_ascii=False, indent=2)
     st.success("🌱 Plante archivée avec succès !")
 
+# --- SECTION : Liste des plantes archivées ---
+if archives:
+    st.markdown("---")
+    st.markdown("### 📚 Plantes archivées")
+    show_archives = st.button("📂 Voir les archives")
+    if show_archives:
+        tri = st.radio("Trier par :", ["Nom", "Date"])
+        archives_sorted = sorted(archives, key=lambda x: x["nom" if tri == "Nom" else "date"])
+
+        for i, plant in enumerate(archives_sorted):
+            with st.expander(f"{plant['nom']} ({plant['date'][:10]})"):
+                st.write(f"📅 Date : {plant['date']}")
+                st.write(f"📍 Coordonnées : {plant['coords']}")
+                if plant["coords"]:
+                    try:
+                        lat, lon = plant["coords"].split(",")
+                        st.map(data={"lat": [float(lat)], "lon": [float(lon)]})
+                    except ValueError:
+                        st.warning("Coordonnées GPS invalides.")
+                if st.button(f"❌ Supprimer", key=f"del_{i}"):
+                    archives.remove(plant)
+                    with open(ARCHIVES_PATH, "w", encoding="utf-8") as f:
+                        json.dump(archives, f, ensure_ascii=False, indent=2)
+                    st.success("Plante supprimée.")
+                    st.experimental_rerun()
+
 # --- Vérifier le cache pour les vertus ---
 if plant_name in cache:
     st.markdown(f"### 🌿 Vertus de **{plant_name}** (cache)")
