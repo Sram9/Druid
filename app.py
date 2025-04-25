@@ -63,12 +63,17 @@ except Exception as err:
     st.warning(f"⚠️ PlantNet indisponible ou timeout : {err}\n–> Bascule sur Plant.id")
     use_plantnet = False
 
-# --- Traitement du résultat principal ---
+# --- Traitement des résultats PlantNet ---
 if use_plantnet:
-    first = data_net["results"][0]
-    plant_name = first["species"]["scientificNameWithoutAuthor"]
-    score = round(first["score"] * 100, 1)
-    st.success(f"✅ PlantNet : **{plant_name}** ({score}%)")
+    st.success("✅ Résultats PlantNet :")
+    top3 = data_net["results"][:3]
+    for idx, result in enumerate(top3, 1):
+        sci_name = result["species"].get("scientificNameWithoutAuthor", "?")
+        common_names = result["species"].get("commonNames", [])
+        common_name = common_names[0] if common_names else "(nom commun inconnu)"
+        prob = round(result["score"] * 100, 1)
+        st.markdown(f"**{idx}. {sci_name}** — *{common_name}* ({prob}%)")
+    plant_name = top3[0]["species"].get("scientificNameWithoutAuthor", "?")
 else:
     # Identification via Plant.id
     with st.spinner("🔍 Identification Plant.id en cours..."):
