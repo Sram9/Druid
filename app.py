@@ -64,23 +64,17 @@ if uploaded_file:
     if use_plantnet:
         st.success("✅ Résultats PlantNet :")
         top3 = data_net["results"][:3]
+        if "plant_name" not in st.session_state and top3:
+            st.session_state.plant_name = top3[0]["species"].get("scientificNameWithoutAuthor", "?")
+
         for idx, result in enumerate(top3, 1):
             sci_name = result["species"].get("scientificNameWithoutAuthor", "?")
             common_names = result["species"].get("commonNames", [])
             common_name = common_names[0] if common_names else "(nom courant inconnu)"
             prob = round(result["score"] * 100, 1)
-
-            query_param = f"plant={sci_name}"
-            current_query = st.query_params.to_dict()
-            current_query["plant"] = sci_name
-            url_with_query = "?" + "&".join([f"{k}={v}" for k, v in current_query.items()])
-            st.markdown(f"[{idx}. {sci_name} — {common_name} ({prob}%)]({url_with_query})")
-
-        # Si aucune plante choisie, prendre la 1ère
-        if "plant" in st.query_params:
-            st.session_state.plant_name = st.query_params["plant"]
-        elif top3:
-            st.session_state.plant_name = top3[0]["species"].get("scientificNameWithoutAuthor", "?")
+            button_label = f"{idx}. {sci_name} — {common_name} ({prob}%)"
+            if st.button(button_label):
+                st.session_state.plant_name = sci_name
     else:
         # Identification via Plant.id
         with st.spinner("🔍 Identification Plant.id en cours..."):
@@ -141,6 +135,7 @@ try:
 except Exception as e:
     st.error("❌ Erreur lors de l’appel à Mistral.")
     st.text(str(e))
+
 
 
 
