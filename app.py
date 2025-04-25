@@ -75,7 +75,7 @@ if uploaded_file:
             common_name = common_names[0] if common_names else "(nom courant inconnu)"
             prob = round(result["score"] * 100, 1)
 
-            if idx == 1 or st.button(f"{idx}. {sci_name} — {common_name} ({prob}%)"):
+            if st.button(f"{idx}. {sci_name} — {common_name} ({prob}%)"):
                 st.session_state.plant_name = sci_name
                 break
     else:
@@ -96,11 +96,6 @@ if uploaded_file:
             score = round(suggestion.get("probability", 0) * 100, 1)
             st.success(f"✅ Plant.id : **{plant_name}** ({score}%)")
             st.session_state.plant_name = plant_name
-
-# --- Réinitialiser l'app pour uploader une nouvelle photo ---
-if st.button("📸 Envoyer une autre photo"):
-    st.session_state.plant_name = None
-    st.experimental_rerun()
 
 # --- Suite si une plante est définie ---
 plant_name = st.session_state.get("plant_name")
@@ -143,5 +138,6 @@ try:
 except Exception as e:
     st.error("❌ Erreur lors de l’appel à Mistral.")
     st.text(str(e))
+
 
 
