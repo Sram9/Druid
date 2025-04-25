@@ -7,7 +7,6 @@ import mimetypes
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
-import urllib.parse
 
 # --- Initialisation de la page Streamlit (doit être la première commande) ---
 st.set_page_config(page_title="Plante + Vertus", layout="centered")
@@ -33,10 +32,6 @@ if 'mistral_calls' not in st.session_state:
     st.session_state.mistral_calls = []
 if 'retry_after' not in st.session_state:
     st.session_state.retry_after = None
-
-# --- Initialisation de la session pour le nom de plante ---
-if "plant_name" not in st.session_state:
-    st.session_state.plant_name = None
 
 # --- Interface utilisateur ---
 st.title("📷🌿 Identification de plante + vertus")
@@ -75,9 +70,17 @@ if uploaded_file:
             common_name = common_names[0] if common_names else "(nom courant inconnu)"
             prob = round(result["score"] * 100, 1)
 
-            if st.button(f"{idx}. {sci_name} — {common_name} ({prob}%)"):
-                st.session_state.plant_name = sci_name
-                break
+            query_param = f"plant={sci_name}"
+            current_query = st.query_params.to_dict()
+            current_query["plant"] = sci_name
+            url_with_query = "?" + "&".join([f"{k}={v}" for k, v in current_query.items()])
+            st.markdown(f"[{idx}. {sci_name} — {common_name} ({prob}%)]({url_with_query})")
+
+        # Si aucune plante choisie, prendre la 1ère
+        if "plant" in st.query_params:
+            st.session_state.plant_name = st.query_params["plant"]
+        elif top3:
+            st.session_state.plant_name = top3[0]["species"].get("scientificNameWithoutAuthor", "?")
     else:
         # Identification via Plant.id
         with st.spinner("🔍 Identification Plant.id en cours..."):
