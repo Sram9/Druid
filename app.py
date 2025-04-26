@@ -1,4 +1,3 @@
-
 import streamlit as st
 import requests
 import os
@@ -149,8 +148,14 @@ st.markdown("---")
 # --- Archiver la plante ---
 st.markdown("### 📍 Archiver cette plante avec localisation")
 
-# Script pour demander la localisation et afficher un message de chargement
-get_location = """
+# Ajout du message d'animation
+st.info("🔄 Recherche de votre localisation en cours...")
+
+# Code pour activer la géolocalisation
+st.session_state.coords = None
+st.session_state.location_error = False
+
+get_location_script = """
 <script>
 function requestLocation() {
   const input = window.parent.document.querySelector('input[data-testid="stTextInput"]');
@@ -162,9 +167,10 @@ function requestLocation() {
       function(position) {
         const coords = position.coords.latitude + "," + position.coords.longitude;
         if (input) { input.value = coords; input.dispatchEvent(new Event('input', { bubbles: true })); }
+        window.parent.document.querySelector('p').innerText = '📍 Localisation activée!';
       },
       function(error) {
-        alert("Merci d'activer votre GPS pour localiser la plante.");
+        window.parent.document.querySelector('p').innerText = '❌ Localisation échouée. Merci d\'activer le GPS.';
         input.value = "";
         input.dispatchEvent(new Event('input', { bubbles: true }));
       }
@@ -175,8 +181,7 @@ requestLocation();
 </script>
 """
 
-st.components.v1.html(get_location)
-st.info("🔄 Recherche de votre localisation en cours...")
+st.components.v1.html(get_location_script)
 coords = st.text_input("Coordonnées GPS", value="", disabled=True)
 
 if st.button("✅ Archiver cette plante"):
@@ -188,40 +193,6 @@ if st.button("✅ Archiver cette plante"):
         st.success("🌱 Plante archivée avec sa localisation !")
     else:
         st.success("🌱 Plante archivée (localisation non disponible).")
-
-# --- Vérifier le cache pour les vertus ---
-if plant_name in cache:
-    st.markdown(f"### 🌿 Vertus de **{plant_name}** (cache)")
-    st.write(cache[plant_name])
-    st.stop()
-
-# --- Gestion du quota Mistral ---
-now = datetime.utcnow()
-st.session_state.mistral_calls = [ts for ts in st.session_state.mistral_calls if now - ts < timedelta(seconds=60)]
-if len(st.session_state.mistral_calls) >= 3:
-    st.error("🚦 Limite de 3 requêtes Mistral/min atteinte. Rafraîchis dans un instant.")
-    st.stop()
-
-# --- Appel Mistral pour les vertus ---
-prompt = f"Quel est le nom courant de cette plante ? Cette plante est-elle comestible ? Quelles sont ses vertus médicinales et comment l'utiliser ? Réponds pour : {plant_name}."
-
-headers_m = {"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"}
-json_data = {"model": "mistral-tiny", "messages": [{"role": "user", "content": prompt}], "max_tokens": 400}
-
-try:
-    st.session_state.mistral_calls.append(now)
-    resp_m = requests.post("https://api.mistral.ai/v1/chat/completions", headers=headers_m, json=json_data, timeout=15)
-    resp_m.raise_for_status()
-    result_m = resp_m.json()
-    answer = result_m["choices"][0]["message"]["content"].strip()
-    st.markdown(f"### 🌿 Vertus de **{plant_name}**")
-    st.write(answer)
-    cache[plant_name] = answer
-    with open(CACHE_PATH, "w", encoding="utf-8") as f:
-        json.dump(cache, f, ensure_ascii=False, indent=2)
-except Exception as e:
-    st.error("❌ Erreur lors de l’appel à Mistral.")
-    st.text(str(e))
 
 
 
