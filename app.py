@@ -182,11 +182,12 @@ else:
             cache[plant_name] = answer
             with open(CACHE_PATH, "w", encoding="utf-8") as f:
                 json.dump(cache, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            st.error("❌ Erreur lors de l’appel à Mistral.")
-            st.text(str(e))
+        except requests.exceptions.RequestException as e:
+            st.warning(f"⚠️ Erreur avec Mistral: {e}")
     else:
-        st.error("
+        st.warning("⚠️ Trop d'appels à l'API Mistral. Veuillez patienter.")
+
+
 
 
 
