@@ -147,27 +147,46 @@ st.markdown("---")
 
 # --- Archiver la plante ---
 st.markdown("### 📍 Archiver cette plante avec localisation")
+
+# Script pour demander la localisation et afficher un message de chargement
 get_location = """
 <script>
-navigator.geolocation.getCurrentPosition(
-  function(position) {
-    const coords = position.coords.latitude + "," + position.coords.longitude;
-    const input = window.parent.document.querySelector('input[data-testid="stTextInput"]');
-    if (input) { input.value = coords; input.dispatchEvent(new Event('input', { bubbles: true })); }
+function requestLocation() {
+  const input = window.parent.document.querySelector('input[data-testid="stTextInput"]');
+  if (!navigator.geolocation) {
+    input.value = "";
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  } else {
+    navigator.geolocation.getCurrentPosition(
+      function(position) {
+        const coords = position.coords.latitude + "," + position.coords.longitude;
+        if (input) { input.value = coords; input.dispatchEvent(new Event('input', { bubbles: true })); }
+      },
+      function(error) {
+        alert("Merci d'activer votre GPS pour localiser la plante.");
+        input.value = "";
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    );
   }
-);
+}
+requestLocation();
 </script>
 """
 
 st.components.v1.html(get_location)
-coords = st.text_input("Coordonnées GPS (automatiques ou manuelles)")
+st.info("🔄 Recherche de votre localisation en cours...")
+coords = st.text_input("Coordonnées GPS", value="", disabled=True)
 
 if st.button("✅ Archiver cette plante"):
     now = datetime.now().isoformat()
     archives.append({"nom": plant_name, "date": now, "coords": coords})
     with open(ARCHIVES_PATH, "w", encoding="utf-8") as f:
         json.dump(archives, f, ensure_ascii=False, indent=2)
-    st.success("🌱 Plante archivée avec succès !")
+    if coords:
+        st.success("🌱 Plante archivée avec sa localisation !")
+    else:
+        st.success("🌱 Plante archivée (localisation non disponible).")
 
 # --- Vérifier le cache pour les vertus ---
 if plant_name in cache:
@@ -202,6 +221,7 @@ try:
 except Exception as e:
     st.error("❌ Erreur lors de l’appel à Mistral.")
     st.text(str(e))
+
 
 
 
