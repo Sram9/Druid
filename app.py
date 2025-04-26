@@ -42,14 +42,36 @@ if 'mistral_calls' not in st.session_state:
 if 'retry_after' not in st.session_state:
     st.session_state.retry_after = None
 
-# --- MENU PRINCIPAL ---
-st.title("📷🌿 Identification de plante + vertus")
+# --- Préparation de la localisation dès l'ouverture ---
+if 'coords' not in st.session_state:
+    st.session_state.coords = ""
 
-menu = st.radio("Que souhaites-tu faire ?", ["📸 Identifier une nouvelle plante", "📚 Voir mes plantes archivées"])
+location_script = """
+<script>
+if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+        function(position) {
+            const coords = position.coords.latitude + "," + position.coords.longitude;
+            const input = window.parent.document.querySelector('input[data-testid="stSessionState"]');
+            if (input) { input.value = coords; input.dispatchEvent(new Event('input', { bubbles: true })); }
+        },
+        function(error) {
+            console.log("GPS non activé ou erreur de récupération.");
+        }
+    );
+}
+</script>
+"""
+st.components.v1.html(location_script)
 
-if menu == "📚 Voir mes plantes archivées":
-    # Liste des archives
-    st.markdown("### 📚 Plantes archivées")
+# --- MENU ACCESSIBLE EN HAUT A DROITE ---
+with st.sidebar:
+    st.markdown("## 📚 Archives")
+    if st.button("Voir mes plantes archivées"):
+        st.session_state.page = "archives"
+
+if st.session_state.get("page") == "archives":
+    st.title("📚 Plantes archivées")
     tri = st.radio("Trier par :", ["Nom", "Date"])
     archives_sorted = sorted(archives, key=lambda x: x["nom" if tri == "Nom" else "date"])
 
@@ -89,6 +111,8 @@ if menu == "📚 Voir mes plantes archivées":
     st.stop()
 
 # --- Sinon : Identification d'une nouvelle plante ---
+st.title("📷🌿 Identification de plante + vertus")
+
 uploaded_file = st.file_uploader("Choisir ou prendre une photo", type=["jpg", "jpeg", "png"])
 if uploaded_file:
     image_bytes = uploaded_file.read()
@@ -138,61 +162,55 @@ if uploaded_file:
             st.success(f"✅ Plant.id : **{plant_name}** ({score}%)")
             st.session_state.plant_name = plant_name
 
-# --- Suite si plante définie ---
 plant_name = st.session_state.get("plant_name")
 if not plant_name:
     st.stop()
 
 st.markdown("---")
 
+# --- Afficher les vertus directement après identification ---
+if plant_name in cache:
+    st.markdown(f"### 🌿 Vertus de **{plant_name}** (cache)")
+    st.write(cache[plant_name])
+else:
+    now = datetime.utcnow()
+    st.session_state.mistral_calls = [ts for ts in st.session_state.mistral_calls if now - ts < timedelta(seconds=60)]
+    if len(st.session_state.mistral_calls) < 3:
+        prompt = f"Quel est le nom courant de cette plante ? Cette plante est-elle comestible ? Quelles sont ses vertus médicinales et comment l'utiliser ? Réponds pour : {plant_name}."
+
+        headers_m = {"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"}
+        json_data = {"model": "mistral-tiny", "messages": [{"role": "user", "content": prompt}], "max_tokens": 400}
+
+        try:
+            st.session_state.mistral_calls.append(now)
+            resp_m = requests.post("https://api.mistral.ai/v1/chat/completions", headers=headers_m, json=json_data, timeout=15)
+            resp_m.raise_for_status()
+            result_m = resp_m.json()
+            answer = result_m["choices"][0]["message"]["content"].strip()
+            st.markdown(f"### 🌿 Vertus de **{plant_name}**")
+            st.write(answer)
+            cache[plant_name] = answer
+            with open(CACHE_PATH, "w", encoding="utf-8") as f:
+                json.dump(cache, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            st.error("❌ Erreur lors de l’appel à Mistral.")
+            st.text(str(e))
+    else:
+        st.error("🚦 Limite de 3 requêtes Mistral/min atteinte. Rafraîchis dans un instant.")
+
+st.markdown("---")
+
 # --- Archiver la plante ---
-st.markdown("### 📍 Archiver cette plante avec localisation")
-
-# Ajout du message d'animation
-st.info("🔄 Recherche de votre localisation en cours...")
-
-# Code pour activer la géolocalisation
-st.session_state.coords = None
-st.session_state.location_error = False
-
-get_location_script = """
-<script>
-function requestLocation() {
-  const input = window.parent.document.querySelector('input[data-testid="stTextInput"]');
-  if (!navigator.geolocation) {
-    input.value = "";
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  } else {
-    navigator.geolocation.getCurrentPosition(
-      function(position) {
-        const coords = position.coords.latitude + "," + position.coords.longitude;
-        if (input) { input.value = coords; input.dispatchEvent(new Event('input', { bubbles: true })); }
-        window.parent.document.querySelector('p').innerText = '📍 Localisation activée!';
-      },
-      function(error) {
-        window.parent.document.querySelector('p').innerText = '❌ Localisation échouée. Merci d\'activer le GPS.';
-        input.value = "";
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    );
-  }
-}
-requestLocation();
-</script>
-"""
-
-st.components.v1.html(get_location_script)
-coords = st.text_input("Coordonnées GPS", value="", disabled=True)
-
 if st.button("✅ Archiver cette plante"):
     now = datetime.now().isoformat()
-    archives.append({"nom": plant_name, "date": now, "coords": coords})
+    archives.append({"nom": plant_name, "date": now, "coords": st.session_state.coords})
     with open(ARCHIVES_PATH, "w", encoding="utf-8") as f:
         json.dump(archives, f, ensure_ascii=False, indent=2)
-    if coords:
+    if st.session_state.coords:
         st.success("🌱 Plante archivée avec sa localisation !")
     else:
         st.success("🌱 Plante archivée (localisation non disponible).")
+
 
 
 
