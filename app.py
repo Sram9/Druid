@@ -1,3 +1,4 @@
+
 import streamlit as st
 import requests
 import os
@@ -221,7 +222,6 @@ try:
 except Exception as e:
     st.error("❌ Erreur lors de l’appel à Mistral.")
     st.text(str(e))
-
 
 
 
