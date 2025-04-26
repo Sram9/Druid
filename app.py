@@ -7,8 +7,9 @@ import mimetypes
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
+import pandas as pd
 
-# --- Initialisation de la page Streamlit (doit être la première commande) ---
+# --- Initialisation de la page Streamlit ---
 st.set_page_config(page_title="Plante + Vertus", layout="centered")
 
 # --- Charger les clés depuis .env ---
@@ -17,7 +18,7 @@ PLANTNET_API_KEY = os.getenv("PLANTNET_API_KEY")
 PLANTID_API_KEY = os.getenv("PLANTID_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
-# --- Chemin du fichier de cache ---
+# --- Chemins des fichiers ---
 CACHE_PATH = "cache_virtues.json"
 ARCHIVES_PATH = "archives.json"
 
@@ -41,17 +42,59 @@ if 'mistral_calls' not in st.session_state:
 if 'retry_after' not in st.session_state:
     st.session_state.retry_after = None
 
-# --- Interface utilisateur ---
+# --- MENU PRINCIPAL ---
 st.title("📷🌿 Identification de plante + vertus")
 
-uploaded_file = st.file_uploader("Choisir ou prendre une photo", type=["jpg","jpeg","png"])
+menu = st.radio("Que souhaites-tu faire ?", ["📸 Identifier une nouvelle plante", "📚 Voir mes plantes archivées"])
+
+if menu == "📚 Voir mes plantes archivées":
+    # Liste des archives
+    st.markdown("### 📚 Plantes archivées")
+    tri = st.radio("Trier par :", ["Nom", "Date"])
+    archives_sorted = sorted(archives, key=lambda x: x["nom" if tri == "Nom" else "date"])
+
+    for i, plant in enumerate(archives_sorted):
+        with st.expander(f"{plant['nom']} ({plant['date'][:10]})"):
+            st.write(f"📅 Date : {plant['date']}")
+            if st.button(f"📍 Localiser sur une carte", key=f"map_{i}"):
+                st.session_state.selected_coords = plant["coords"]
+                st.session_state.selected_name = plant["nom"]
+                st.session_state.show_map = True
+            if st.button(f"❌ Supprimer", key=f"del_{i}"):
+                archives.remove(plant)
+                with open(ARCHIVES_PATH, "w", encoding="utf-8") as f:
+                    json.dump(archives, f, ensure_ascii=False, indent=2)
+                st.success("Plante supprimée.")
+                st.experimental_rerun()
+
+    if "show_map" in st.session_state and st.session_state.show_map:
+        st.markdown("---")
+        st.markdown(f"### 🗺️ Localisation de : {st.session_state.selected_name}")
+
+        df = pd.DataFrame(
+            [
+                {"lat": float(p["coords"].split(",")[0]), "lon": float(p["coords"].split(",")[1]), "name": p["nom"]}
+                for p in archives if p["coords"]
+            ]
+        )
+
+        st.map(df)
+        lat, lon = map(float, st.session_state.selected_coords.split(","))
+        maps_link = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
+        st.markdown(f"[🧭 Démarrer la navigation]({maps_link})", unsafe_allow_html=True)
+        if st.button("🔙 Retour à la liste"):
+            st.session_state.show_map = False
+            st.experimental_rerun()
+
+    st.stop()
+
+# --- Sinon : Identification d'une nouvelle plante ---
+uploaded_file = st.file_uploader("Choisir ou prendre une photo", type=["jpg", "jpeg", "png"])
 if uploaded_file:
-    # Lire et afficher l’image
     image_bytes = uploaded_file.read()
     image = Image.open(io.BytesIO(image_bytes))
     st.image(image, caption="Image sélectionnée", use_container_width=True)
 
-    # --- Tentative d'identification avec PlantNet (timeout 10s) ---
     use_plantnet = True
     try:
         with st.spinner("🔍 Identification PlantNet en cours..."):
@@ -68,7 +111,6 @@ if uploaded_file:
         st.warning(f"⚠️ PlantNet indisponible ou timeout : {err}\n–> Bascule sur Plant.id")
         use_plantnet = False
 
-    # --- Traitement des résultats PlantNet ---
     if use_plantnet:
         st.success("✅ Résultats PlantNet :")
         top3 = data_net["results"][:3]
@@ -84,16 +126,10 @@ if uploaded_file:
             if st.button(button_label):
                 st.session_state.plant_name = sci_name
     else:
-        # Identification via Plant.id
         with st.spinner("🔍 Identification Plant.id en cours..."):
             headers = {"Api-Key": PLANTID_API_KEY}
             files2 = {"images": image_bytes}
-            resp2 = requests.post(
-                "https://api.plant.id/v2/identify",
-                headers=headers,
-                files=files2,
-                timeout=15
-            )
+            resp2 = requests.post("https://api.plant.id/v2/identify", headers=headers, files=files2, timeout=15)
             resp2.raise_for_status()
             pid = resp2.json()
             suggestion = pid.get("suggestions", [])[0]
@@ -102,13 +138,14 @@ if uploaded_file:
             st.success(f"✅ Plant.id : **{plant_name}** ({score}%)")
             st.session_state.plant_name = plant_name
 
-# --- Suite si une plante est définie ---
+# --- Suite si plante définie ---
 plant_name = st.session_state.get("plant_name")
 if not plant_name:
     st.stop()
 
-# --- Bouton pour archiver avec géolocalisation (HTML5) ---
 st.markdown("---")
+
+# --- Archiver la plante ---
 st.markdown("### 📍 Archiver cette plante avec localisation")
 get_location = """
 <script>
@@ -121,45 +158,16 @@ navigator.geolocation.getCurrentPosition(
 );
 </script>
 """
+
 st.components.v1.html(get_location)
 coords = st.text_input("Coordonnées GPS (automatiques ou manuelles)")
 
 if st.button("✅ Archiver cette plante"):
     now = datetime.now().isoformat()
-    archives.append({
-        "nom": plant_name,
-        "date": now,
-        "coords": coords
-    })
+    archives.append({"nom": plant_name, "date": now, "coords": coords})
     with open(ARCHIVES_PATH, "w", encoding="utf-8") as f:
         json.dump(archives, f, ensure_ascii=False, indent=2)
     st.success("🌱 Plante archivée avec succès !")
-
-# --- SECTION : Liste des plantes archivées ---
-if archives:
-    st.markdown("---")
-    st.markdown("### 📚 Plantes archivées")
-    show_archives = st.button("📂 Voir les archives")
-    if show_archives:
-        tri = st.radio("Trier par :", ["Nom", "Date"])
-        archives_sorted = sorted(archives, key=lambda x: x["nom" if tri == "Nom" else "date"])
-
-        for i, plant in enumerate(archives_sorted):
-            with st.expander(f"{plant['nom']} ({plant['date'][:10]})"):
-                st.write(f"📅 Date : {plant['date']}")
-                st.write(f"📍 Coordonnées : {plant['coords']}")
-                if plant["coords"]:
-                    try:
-                        lat, lon = plant["coords"].split(",")
-                        st.map(data={"lat": [float(lat)], "lon": [float(lon)]})
-                    except ValueError:
-                        st.warning("Coordonnées GPS invalides.")
-                if st.button(f"❌ Supprimer", key=f"del_{i}"):
-                    archives.remove(plant)
-                    with open(ARCHIVES_PATH, "w", encoding="utf-8") as f:
-                        json.dump(archives, f, ensure_ascii=False, indent=2)
-                    st.success("Plante supprimée.")
-                    st.experimental_rerun()
 
 # --- Vérifier le cache pour les vertus ---
 if plant_name in cache:
@@ -167,7 +175,7 @@ if plant_name in cache:
     st.write(cache[plant_name])
     st.stop()
 
-# --- Gestion rate limit pour Mistral ---
+# --- Gestion du quota Mistral ---
 now = datetime.utcnow()
 st.session_state.mistral_calls = [ts for ts in st.session_state.mistral_calls if now - ts < timedelta(seconds=60)]
 if len(st.session_state.mistral_calls) >= 3:
@@ -194,6 +202,7 @@ try:
 except Exception as e:
     st.error("❌ Erreur lors de l’appel à Mistral.")
     st.text(str(e))
+
 
 
 
