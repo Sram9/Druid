@@ -186,39 +186,8 @@ else:
             st.error("❌ Erreur lors de l’appel à Mistral.")
             st.text(str(e))
     else:
-        st.error("🚦 Limite de 3 requêtes Mistral/min atteinte. Rafraîchis dans un instant.")
+        st.error("
 
-st.markdown("---")
-
-# --- Archiver la plante ---
-if st.button("✅ Archiver cette plante"):
-    # Demander la position GPS au moment du clic
-    gps_script = """
-    <script>
-    if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-            function(position) {
-                const coords = position.coords.latitude + "," + position.coords.longitude;
-                const input = window.parent.document.querySelector('input[data-testid="stSessionState.coords"]');
-                if (input) { input.value = coords; input.dispatchEvent(new Event('input', { bubbles: true })); }
-            },
-            function(error) {
-                alert('⚠️ GPS non activé. Activez-le pour enregistrer la localisation.');
-            }
-        );
-    }
-    </script>
-    """
-    st.components.v1.html(gps_script)
-
-    now = datetime.now().isoformat()
-    archives.append({"nom": plant_name, "date": now, "coords": st.session_state.coords})
-    with open(ARCHIVES_PATH, "w", encoding="utf-8") as f:
-        json.dump(archives, f, ensure_ascii=False, indent=2)
-    if st.session_state.coords:
-        st.success("🌱 Plante archivée avec sa localisation !")
-    else:
-        st.success("🌱 Plante archivée (localisation non disponible).")
 
 
 
