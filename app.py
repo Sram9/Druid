@@ -44,7 +44,7 @@ if 'retry_after' not in st.session_state:
 
 # --- Préparation de la localisation dès l'ouverture ---
 if 'coords' not in st.session_state:
-    st.session_state.coords = ""
+    st.session_state.coords = None
 
 location_script = """
 <script>
@@ -52,11 +52,11 @@ if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
         function(position) {
             const coords = position.coords.latitude + "," + position.coords.longitude;
-            const input = window.parent.document.querySelector('input[data-testid="stSessionState"]');
+            const input = window.parent.document.querySelector('input[data-testid="stSessionState.coords"]');
             if (input) { input.value = coords; input.dispatchEvent(new Event('input', { bubbles: true })); }
         },
         function(error) {
-            console.log("GPS non activé ou erreur de récupération.");
+            alert('⚠️ GPS non activé. Activez-le pour enregistrer la localisation.');
         }
     );
 }
@@ -66,8 +66,10 @@ st.components.v1.html(location_script)
 
 # --- MENU ACCESSIBLE EN HAUT A DROITE ---
 with st.sidebar:
-    st.markdown("## 📚 Archives")
-    if st.button("Voir mes plantes archivées"):
+    st.markdown("## 📚 Menu")
+    if st.button("🌿 Nouvelle identification"):
+        st.session_state.page = "home"
+    if st.button("📚 Voir mes plantes archivées"):
         st.session_state.page = "archives"
 
 if st.session_state.get("page") == "archives":
@@ -79,7 +81,7 @@ if st.session_state.get("page") == "archives":
         with st.expander(f"{plant['nom']} ({plant['date'][:10]})"):
             st.write(f"📅 Date : {plant['date']}")
             if st.button(f"📍 Localiser sur une carte", key=f"map_{i}"):
-                st.session_state.selected_coords = plant["coords"]
+                st.session_state.selected_coords = plant.get("coords")
                 st.session_state.selected_name = plant["nom"]
                 st.session_state.show_map = True
             if st.button(f"❌ Supprimer", key=f"del_{i}"):
@@ -93,17 +95,18 @@ if st.session_state.get("page") == "archives":
         st.markdown("---")
         st.markdown(f"### 🗺️ Localisation de : {st.session_state.selected_name}")
 
-        df = pd.DataFrame(
-            [
-                {"lat": float(p["coords"].split(",")[0]), "lon": float(p["coords"].split(",")[1]), "name": p["nom"]}
-                for p in archives if p["coords"]
-            ]
-        )
+        points = [
+            {"lat": float(p["coords"].split(",")[0]), "lon": float(p["coords"].split(",")[1]), "name": p["nom"]}
+            for p in archives if p.get("coords")
+        ]
 
-        st.map(df)
-        lat, lon = map(float, st.session_state.selected_coords.split(","))
-        maps_link = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
-        st.markdown(f"[🧭 Démarrer la navigation]({maps_link})", unsafe_allow_html=True)
+        if points:
+            df = pd.DataFrame(points)
+            st.map(df)
+            selected = next((p for p in points if p['name'] == st.session_state.selected_name), points[0])
+            maps_link = f"https://www.google.com/maps/dir/?api=1&destination={selected['lat']},{selected['lon']}"
+            st.markdown(f"[🧭 Démarrer la navigation]({maps_link})", unsafe_allow_html=True)
+
         if st.button("🔙 Retour à la liste"):
             st.session_state.show_map = False
             st.experimental_rerun()
@@ -111,6 +114,9 @@ if st.session_state.get("page") == "archives":
     st.stop()
 
 # --- Sinon : Identification d'une nouvelle plante ---
+if st.session_state.get("page") != "archives":
+    st.session_state.page = "home"
+
 st.title("📷🌿 Identification de plante + vertus")
 
 uploaded_file = st.file_uploader("Choisir ou prendre une photo", type=["jpg", "jpeg", "png"])
