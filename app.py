@@ -171,36 +171,33 @@ if up:
         st.write(f"{name} ({s['probability']*100:.1f}%)")
         state.plant_name=name
     # Mistral
-    name=state.plant_name
-    if name in cache:
-        v=cache[name]
-    else:
-        now=datetime.utcnow()
-        state.mistral_calls=[t for t in state.mistral_calls if now-t<timedelta(seconds=60)]
-        if len(state.mistral_calls)<3:
-            body={"model":"mistral-tiny","messages":[{"role":"user","content":f"Nom courant {name}, comestible, vertus médicinales?"}], "max_tokens":200}
-            h={"Authorization":f"Bearer {MISTRAL_API_KEY}"}
+name = state.plant_name
+if name in cache:
+    v = cache[name]
+else:
+    now = datetime.utcnow()
+    state.mistral_calls = [t for t in state.mistral_calls if now - t < timedelta(seconds=60)]
+    if len(state.mistral_calls) < 3:
+        body = {"model": "mistral-tiny", "messages": [{"role": "user", "content": f"Nom courant {name}, comestible, vertus médicinales?"}], "max_tokens": 200}
+        h = {"Authorization": f"Bearer {MISTRAL_API_KEY}"}
+        try:
             resp = requests.post("https://api.openai.com/v1/chat/completions", headers=h, json=body)
-            v=resp.json().get('choices',[])[0].get('message', {}).get('content','Aucune donnée disponible.')
-            cache[name] = v
-            open(CACHE_PATH,'w',encoding="utf-8").write(json.dumps(cache,ensure_ascii=False,indent=2))
-            state.mistral_calls.append(now)
-        else:
-            v = "Évitez les requêtes excessives, réessayez plus tard."
-    # Ajout à l'archive
-    if st.button("🗄️ Archiver cette plante"):
-        if state.coords:
-            archives.append({
-                'nom':state.plant_name,
-                'date':datetime.utcnow().isoformat(),
-                'coords':state.coords,
-                'vertus':v
-            })
-            open(ARCHIVES_PATH,'w',encoding="utf-8").write(json.dumps(archives,ensure_ascii=False,indent=2))
-            st.success("Plante archivée avec succès")
-            state.page='archives'
-        else:
-            st.error("⚠️ Impossible d'archiver sans géolocalisation.")
+            resp.raise_for_status()  # Vérifier que la requête a bien réussi
+            # Assurez-vous que 'choices' existe et est une liste
+            if resp.status_code == 200 and 'choices' in resp.json() and len(resp.json()['choices']) > 0:
+                v = resp.json()['choices'][0].get('message', {}).get('content', 'Aucune donnée disponible.')
+            else:
+                v = "Aucune réponse de l'API."
+        except requests.exceptions.RequestException as e:
+            v = f"Erreur de la requête API : {e}"
+        except KeyError as e:
+            v = f"Erreur dans la réponse API : clé manquante ({e})"
+        cache[name] = v
+        open(CACHE_PATH, 'w', encoding="utf-8").write(json.dumps(cache, ensure_ascii=False, indent=2))
+        state.mistral_calls.append(now)
+    else:
+        v = "Évitez les requêtes excessives, réessayez plus tard."
+
 
 
 
