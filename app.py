@@ -118,13 +118,13 @@ if up:
         r.raise_for_status()
         res=r.json()["results"]
         sug=res[:3]
-        st.write([f\"{s['species']['scientificNameWithoutAuthor']} ({s['score']*100:.1f}%)\" for s in sug])
+        st.write([f"{s['species']['scientificNameWithoutAuthor']} ({s['score']*100:.1f}%)" for s in sug])
         name=sug[0]['species']['scientificNameWithoutAuthor']
     except:
         st.warning("PlantNet failed, use Plant.id")
         j=requests.post("https://api.plant.id/v2/identify",headers={"Api-Key":PLANTID_API_KEY},files={"images":img_bytes}).json()
         s=j["suggestions"][0]; name=s["plant_name"]
-        st.write(f\"{name} ({s['probability']*100:.1f}%)\")
+        st.write(f"{name} ({s['probability']*100:.1f}%)")
     state.plant_name=name
     # Mistral
     if name in cache:
@@ -133,7 +133,7 @@ if up:
         now=datetime.utcnow()
         state.mistral_calls=[t for t in state.mistral_calls if now-t<timedelta(60)]
         if len(state.mistral_calls)<3:
-            body={"model":"mistral-tiny","messages":[{"role":"user","content":f\"Nom courant {name}, comestible, vertus médicinales?\"}], "max_tokens":200}
+            body={"model":"mistral-tiny","messages":[{"role":"user","content":f"Nom courant {name}, comestible, vertus médicinales?"}], "max_tokens":200}
             h={"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
             j=requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
             v=j["choices"][0]["message"]["content"]; cache[name]=v; open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
@@ -146,6 +146,7 @@ if up:
         archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v})
         open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
         st.success("Archivée !")
+
 
 
 
