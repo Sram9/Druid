@@ -179,22 +179,29 @@ if up:
         state.mistral_calls=[t for t in state.mistral_calls if now-t<timedelta(seconds=60)]
         if len(state.mistral_calls)<3:
             body={"model":"mistral-tiny","messages":[{"role":"user","content":f"Nom courant {name}, comestible, vertus médicinales?"}], "max_tokens":200}
-            h={"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
-            j=requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
-            v=j['choices'][0]['message']['content']; cache[name]=v; open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
+            h={"Authorization":f"Bearer {MISTRAL_API_KEY}"}
+            resp = requests.post("https://api.openai.com/v1/chat/completions", headers=h, json=body)
+            v=resp.json().get('choices',[])[0].get('message', {}).get('content','Aucune donnée disponible.')
+            cache[name] = v
+            open(CACHE_PATH,'w',encoding="utf-8").write(json.dumps(cache,ensure_ascii=False,indent=2))
             state.mistral_calls.append(now)
         else:
-            v="Limite atteinte"
-    st.markdown(f"### 🌿 Vertus de **{name}**")
-    st.write(v)
-    # Archiver
-    if st.button("✅ Archiver cette plante"):
+            v = "Évitez les requêtes excessives, réessayez plus tard."
+    # Ajout à l'archive
+    if st.button("🗄️ Archiver cette plante"):
         if state.coords:
-            archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v})
-            open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
-            st.success("Plante archivée avec succès!")
+            archives.append({
+                'nom':state.plant_name,
+                'date':datetime.utcnow().isoformat(),
+                'coords':state.coords,
+                'vertus':v
+            })
+            open(ARCHIVES_PATH,'w',encoding="utf-8").write(json.dumps(archives,ensure_ascii=False,indent=2))
+            st.success("Plante archivée avec succès")
+            state.page='archives'
         else:
-            st.error("⚠️ Les coordonnées GPS ne sont pas disponibles.")
+            st.error("⚠️ Impossible d'archiver sans géolocalisation.")
+
 
 
 
