@@ -1,3 +1,4 @@
+
 import streamlit as st
 import requests
 import os
@@ -63,10 +64,8 @@ with st.sidebar:
     st.markdown("## 📚 Menu")
     if st.button(("✅ " if state.page=='home' else "") + "🌿 Nouvelle identification"):
         state.page='home'
-        st.experimental_rerun()
     if st.button(("✅ " if state.page=='archives' else "") + "📚 Archives"):
         state.page='archives'
-        st.experimental_rerun()
 
 # --- Archives page ---
 if state.page=='archives':
@@ -81,13 +80,13 @@ if state.page=='archives':
                 state.selected_coords = p.get('coords')
                 state.selected_name = p['nom']
                 state.show_map = True
-                st.experimental_rerun()
             if c2.button("🔍 Vertus", key=f"virt{i}"):
                 st.write(p.get('vertus','Aucune vertu enregistrée'))
             if c3.button("❌ Supprimer", key=f"del{i}"):
                 archives.remove(p)
                 open(ARCHIVES_PATH,'w',encoding='utf-8').write(json.dumps(archives,ensure_ascii=False,indent=2))
-                st.experimental_rerun()
+                st.experimental_rerun = None
+                state.page='archives'
             new = st.text_input("✏️ Renommer :", value=p['nom'], key=f"rn{i}")
             if st.button("💾 Enregistrer nom", key=f"sv{i}"):
                 p['nom']=new
@@ -109,7 +108,6 @@ if state.page=='archives':
             st.error("⚠️ Aucune coordonnée disponible.")
         if st.button("🔙 Retour archives"):
             state.show_map=False
-            st.experimental_rerun()
     st.stop()
 
 # --- Identification page ---
@@ -144,7 +142,7 @@ if up:
         s=j['suggestions'][0]; name=s['plant_name']
         st.write(f"{name} ({s['probability']*100:.1f}%)")
         state.plant_name=name
-    # Mistral with custom prompt
+    # Mistral
     name=state.plant_name
     if name in cache:
         v=cache[name]
@@ -152,8 +150,7 @@ if up:
         now=datetime.utcnow()
         state.mistral_calls=[t for t in state.mistral_calls if now-t<timedelta(seconds=60)]
         if len(state.mistral_calls)<3:
-            prompt = f"Cette plante est-elle comestible ou a-t-elle des vertus médicinales et, si oui, comment est-elle utilisée ? Réponds pour : {name}."
-            body={"model":"mistral-tiny","messages":[{"role":"user","content":prompt}], "max_tokens":200}
+            body={"model":"mistral-tiny","messages":[{"role":"user","content":f"Nom courant {name}, comestible, vertus médicinales?"}], "max_tokens":200}
             h={"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
             j=requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
             v=j['choices'][0]['message']['content']; cache[name]=v; open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
@@ -167,6 +164,7 @@ if up:
         archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v})
         open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
         st.success("Archivée !")
+
 
 
 
