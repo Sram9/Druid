@@ -34,6 +34,7 @@ if 'selected_coords' not in state: state.selected_coords = None
 if 'selected_name' not in state: state.selected_name = None
 if 'show_map' not in state: state.show_map = False
 if 'mistral_calls' not in state: state.mistral_calls = []
+if 'plant_name' not in state: state.plant_name = None
 
 # --- Lire coords depuis params URL ---
 params = st.experimental_get_query_params()
@@ -124,34 +125,46 @@ if up:
         resp.raise_for_status()
         results = resp.json().get('results',[])
         sug = results[:3]
-        st.write([f"{s['species']['scientificNameWithoutAuthor']} ({s['score']*100:.1f}%)" for s in sug])
-        name = sug[0]['species']['scientificNameWithoutAuthor']
+        # Afficher suggestions cliquables
+        for idx,s in enumerate(sug,1):
+            sci=s['species']['scientificNameWithoutAuthor']
+            prob=round(s['score']*100,1)
+            if st.button(f"{idx}. {sci} ({prob}%)", key=f"sugg{idx}"):
+                state.plant_name = sci
+                state.mistral_calls = []  # reset calls for new suggestion
+        # Set default if none clicked
+        if state.plant_name is None and sug:
+            state.plant_name = sug[0]['species']['scientificNameWithoutAuthor']
     except:
         st.warning("PlantNet failed, use Plant.id")
         j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key":PLANTID_API_KEY}, files={"images":img_bytes}).json()
         s=j['suggestions'][0]; name=s['plant_name']
         st.write(f"{name} ({s['probability']*100:.1f}%)")
-    state.plant_name=name
-    # Mistral
+        state.plant_name=name
+    # Mistral pour plant_name
+    name=state.plant_name
     if name in cache:
         v=cache[name]
     else:
         now=datetime.utcnow()
         state.mistral_calls=[t for t in state.mistral_calls if now-t<timedelta(seconds=60)]
         if len(state.mistral_calls)<3:
-            body={"model":"mistral-tiny","messages":[{"role":"user","content":f"Nom courant {name}, comestible, vertus médicinales?"}],"max_tokens":200}
+            body={"model":"mistral-tiny","messages":[{"role":"user","content":f"Nom courant {name}, comestible, vertus médicinales?"}], "max_tokens":200}
             h={"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
             j=requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
             v=j['choices'][0]['message']['content']; cache[name]=v; open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
             state.mistral_calls.append(now)
         else:
             v="Limite atteinte"
+    st.markdown(f"### 🌿 Vertus de **{name}**")
     st.write(v)
     # Archiver
     if st.button("✅ Archiver cette plante"):
         archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v})
         open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
         st.success("Archivée !")
+```
+
 
 
 
