@@ -1,4 +1,3 @@
-
 import streamlit as st
 import requests
 import os
@@ -66,6 +65,8 @@ with st.sidebar:
         state.page='home'
     if st.button(("✅ " if state.page=='archives' else "") + "📚 Archives"):
         state.page='archives'
+    if st.button(("✅ " if state.page=='search' else "") + "🔍 Recherche par vertu"):
+        state.page='search'
 
 # --- Archives page ---
 if state.page=='archives':
@@ -110,60 +111,87 @@ if state.page=='archives':
             state.show_map=False
     st.stop()
 
-# --- Identification page ---
-state.page='home'
-st.title("📷🌿 Identifier une plante + vertus")
-up = st.file_uploader("Photo", type=["jpg","jpeg","png"])
-if up:
-    img_bytes = up.read()
-    st.image(Image.open(io.BytesIO(img_bytes)), use_container_width=True)
-    # PlantNet
-    try:
-        resp = requests.post(
-            f"https://my-api.plantnet.org/v2/identify/all?api-key={PLANTNET_API_KEY}",
-            files={"images":(up.name,io.BytesIO(img_bytes),mimetypes.guess_type(up.name)[0] or 'image/jpeg')},
-            data={"organs":"leaf"}, timeout=10)
-        resp.raise_for_status()
-        results = resp.json().get('results',[])
-        sug = results[:3]
-        # Afficher suggestions cliquables
-        for idx,s in enumerate(sug,1):
-            sci=s['species']['scientificNameWithoutAuthor']
-            prob=round(s['score']*100,1)
-            if st.button(f"{idx}. {sci} ({prob}%)", key=f"sugg{idx}"):
-                state.plant_name = sci
-                state.mistral_calls = []
-        # Default
-        if state.plant_name is None and sug:
-            state.plant_name = sug[0]['species']['scientificNameWithoutAuthor']
-    except:
-        st.warning("PlantNet failed, use Plant.id")
-        j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key":PLANTID_API_KEY}, files={"images":img_bytes}).json()
-        s=j['suggestions'][0]; name=s['plant_name']
-        st.write(f"{name} ({s['probability']*100:.1f}%)")
-        state.plant_name=name
-    # Mistral
-    name=state.plant_name
-    if name in cache:
-        v=cache[name]
-    else:
-        now=datetime.utcnow()
-        state.mistral_calls=[t for t in state.mistral_calls if now-t<timedelta(seconds=60)]
-        if len(state.mistral_calls)<3:
-            body={"model":"mistral-tiny","messages":[{"role":"user","content":f"Nom courant {name}, comestible, vertus médicinales?"}], "max_tokens":200}
-            h={"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
-            j=requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
-            v=j['choices'][0]['message']['content']; cache[name]=v; open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
-            state.mistral_calls.append(now)
+# --- Recherche par vertu page ---
+if state.page=='search':
+    st.title("🔍 Recherche par vertu")
+    keyword = st.text_input("Saisir un mot-clé pour rechercher une vertu", "")
+    if keyword:
+        # Filtrer les plantes archivées contenant le mot-clé dans les vertus
+        results = [p for p in archives if keyword.lower() in (p.get('vertus', '').lower())]
+        if results:
+            for p in results:
+                with st.expander(f"{p['nom']} ({p['date'][:10]})"):
+                    st.write(f"📅 {p['date']}")
+                    st.write(f"🔍 Vertus : {p.get('vertus', 'Aucune vertu enregistrée')}")
+                    c1, c2 = st.columns(2)
+                    if c1.button("📍 Localiser", key=f"loc_{p['nom']}"):
+                        state.selected_coords = p.get('coords')
+                        state.selected_name = p['nom']
+                        state.show_map = True
+                    if c2.button("❌ Supprimer", key=f"del_{p['nom']}"):
+                        archives.remove(p)
+                        open(ARCHIVES_PATH, 'w', encoding='utf-8').write(json.dumps(archives, ensure_ascii=False, indent=2))
+                        st.experimental_rerun()
         else:
-            v="Limite atteinte"
-    st.markdown(f"### 🌿 Vertus de **{name}**")
-    st.write(v)
-    # Archiver
-    if st.button("✅ Archiver cette plante"):
-        archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v})
-        open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
-        st.success("Archivée !")
+            st.write(f"Aucune plante trouvée avec le mot-clé '{keyword}' dans les vertus.")
+    if st.button("🔙 Retour archives"):
+        state.page = 'archives'
+
+# --- Identification page ---
+if state.page=='home':
+    st.title("📷🌿 Identifier une plante + vertus")
+    up = st.file_uploader("Photo", type=["jpg","jpeg","png"])
+    if up:
+        img_bytes = up.read()
+        st.image(Image.open(io.BytesIO(img_bytes)), use_container_width=True)
+        # PlantNet
+        try:
+            resp = requests.post(
+                f"https://my-api.plantnet.org/v2/identify/all?api-key={PLANTNET_API_KEY}",
+                files={"images":(up.name,io.BytesIO(img_bytes),mimetypes.guess_type(up.name)[0] or 'image/jpeg')},
+                data={"organs":"leaf"}, timeout=10)
+            resp.raise_for_status()
+            results = resp.json().get('results',[])
+            sug = results[:3]
+            # Afficher suggestions cliquables
+            for idx,s in enumerate(sug,1):
+                sci=s['species']['scientificNameWithoutAuthor']
+                prob=round(s['score']*100,1)
+                if st.button(f"{idx}. {sci} ({prob}%)", key=f"sugg{idx}"):
+                    state.plant_name = sci
+                    state.mistral_calls = []
+            # Default
+            if state.plant_name is None and sug:
+                state.plant_name = sug[0]['species']['scientificNameWithoutAuthor']
+        except:
+            st.warning("PlantNet failed, use Plant.id")
+            j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key":PLANTID_API_KEY}, files={"images":img_bytes}).json()
+            s=j['suggestions'][0]; name=s['plant_name']
+            st.write(f"{name} ({s['probability']*100:.1f}%)")
+            state.plant_name=name
+        # Mistral
+        name=state.plant_name
+        if name in cache:
+            v=cache[name]
+        else:
+            now=datetime.utcnow()
+            state.mistral_calls=[t for t in state.mistral_calls if now-t<timedelta(seconds=60)]
+            if len(state.mistral_calls)<3:
+                body={"model":"mistral-tiny","messages":[{"role":"user","content":f"Nom courant {name}, comestible, vertus médicinales?"}], "max_tokens":200}
+                h={"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
+                j=requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
+                v=j['choices'][0]['message']['content']; cache[name]=v; open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
+                state.mistral_calls.append(now)
+            else:
+                v="Limite atteinte"
+        st.markdown(f"### 🌿 Vertus de **{name}**")
+        st.write(v)
+        # Archiver
+        if st.button("✅ Archiver cette plante"):
+            archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v})
+            open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
+            st.success("Archivée !")
+
 
 
 
