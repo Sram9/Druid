@@ -8,6 +8,8 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
 import pandas as pd
+import folium
+from streamlit_folium import st_folium
 
 st.set_page_config(page_title="Plante + Vertus", layout="centered")
 
@@ -186,6 +188,7 @@ if(navigator.geolocation){
             archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v})
             open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
             st.success("Archivée !")
+
 
 
 
