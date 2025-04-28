@@ -28,14 +28,13 @@ archives = json.load(open(ARCHIVES_PATH, "r", encoding="utf-8")) if os.path.exis
 
 # --- Session state defaults ---
 state = st.session_state
-if 'page' not in state: state.page = 'home'
-if 'coords' not in state: state.coords = None
-if 'selected_coords' not in state: state.selected_coords = None
-if 'selected_name' not in state: state.selected_name = None
-if 'selected_plant' not in state: state.selected_plant = None
-if 'show_map' not in state: state.show_map = False
-if 'mistral_calls' not in state: state.mistral_calls = []
-if 'plant_name' not in state: state.plant_name = None
+for key, val in {
+    'page': 'home', 'coords': None, 'selected_coords': None,
+    'selected_name': None, 'show_map': False, 'mistral_calls': [],
+    'plant_name': None, 'conversation': []
+}.items():
+    if key not in state:
+        state[key] = val
 
 # --- Lire coords depuis params URL ---
 params = st.query_params
@@ -70,92 +69,96 @@ with st.sidebar:
     if st.button(("✅ " if state.page == 'map' else "") + "🗺️ Carte des plantes"):
         state.page = 'map'
 
-# --- Carte des plantes ---
+# --- Page Carte des plantes ---
 if state.page == 'map':
     st.title("🗺️ Carte des plantes géolocalisées")
-    if archives:
-        df = []
-        for p in archives:
-            if p.get('coords'):
-                try:
-                    lat, lon = map(float, p['coords'].split(','))
-                    df.append({'lat': lat, 'lon': lon, 'nom': p['nom']})
-                except:
-                    continue
-        if df:
-            df = pd.DataFrame(df)
-            st.map(df)
-            st.success(f"{len(df)} plante(s) affichée(s).")
-        else:
-            st.info("Aucune plante avec coordonnées valides pour afficher sur la carte.")
+    # Préparer coordonnées
+    coords_list = []
+    for p in archives:
+        if p.get('coords'):
+            try:
+                lat, lon = map(float, p['coords'].split(','))
+                coords_list.append({'lat': lat, 'lon': lon, 'nom': p['nom']})
+            except:
+                continue
+    # Toujours afficher une carte
+    if coords_list:
+        df = pd.DataFrame(coords_list)
     else:
-        st.info("Aucune plante archivée encore.")
-
+        st.info("Aucune plante géolocalisée pour l'instant. Carte centrée sur votre position si disponible.")
+        # carte vide centrée sur position utilisateur ou centre France
+        try:
+            lat0, lon0 = map(float, state.coords.split(',')) if state.coords else (46.8, 2.4)
+        except:
+            lat0, lon0 = 46.8, 2.4
+        df = pd.DataFrame([{'lat': lat0, 'lon': lon0}])
+    st.map(df)
     st.stop()
 
-# --- Archives page ---
+# --- Page Archives ---
 if state.page == 'archives':
     st.title("📚 Plantes archivées")
     order = st.radio("Trier par :", ["Nom", "Date"])
-    sorted_archives = sorted(archives, key=lambda p: p['nom'] if order == 'Nom' else p['date'])
-    for i, p in enumerate(sorted_archives):
-        with st.expander(f"{p['nom']} ({p['date'][:10]})", expanded=(state.selected_plant == p['nom'])):
+    sorted_arch = sorted(archives, key=lambda p: p['nom'] if order=='Nom' else p['date'])
+    for i, p in enumerate(sorted_arch):
+        with st.expander(f"{p['nom']} ({p['date'][:10]})"):
             st.write(f"📅 {p['date']}")
-            c1, c2, c3 = st.columns(3)
+            # Actions
+            c1, c2, c3, c4 = st.columns(4)
+            # Localiser
             if c1.button("📍 Localiser", key=f"loc{i}"):
                 state.selected_coords = p.get('coords')
-                state.selected_name = p['nom']
                 state.page = 'map'
                 st.rerun()
-            if c2.button("🔍 Voir vertus", key=f"virt{i}"):
-                st.write(p.get('vertus', 'Aucune vertu enregistrée'))
-            if c3.button("❌ Supprimer", key=f"del{i}"):
+            # Supprimer
+            if c2.button("❌ Supprimer", key=f"del{i}"):
                 archives.remove(p)
-                open(ARCHIVES_PATH, 'w', encoding='utf-8').write(json.dumps(archives, ensure_ascii=False, indent=2))
-                st.success("Supprimée.")
+                open(ARCHIVES_PATH,'w',encoding='utf-8').write(json.dumps(archives,ensure_ascii=False,indent=2))
+                st.success("Plante supprimée")
                 st.rerun()
-            new = st.text_input("✏️ Renommer :", value=p['nom'], key=f"rn{i}")
-            if st.button("💾 Enregistrer nom", key=f"sv{i}"):
-                p['nom'] = new
-                open(ARCHIVES_PATH, 'w', encoding='utf-8').write(json.dumps(archives, ensure_ascii=False, indent=2))
-                st.success("Nom mis à jour")
-            # Éditer vertus aussi
-            new_virtus = st.text_area("💊 Modifier vertus :", value=p.get('vertus', ''), key=f"vrt{i}")
-            if st.button("💾 Sauver vertus", key=f"svv{i}"):
-                p['vertus'] = new_virtus
-                open(ARCHIVES_PATH, 'w', encoding='utf-8').write(json.dumps(archives, ensure_ascii=False, indent=2))
-                st.success("Vertus mises à jour")
+            # Partager
+            if c3.button("🔗 Partager", key=f"share{i}"):
+                if p.get('coords'):
+                    lat, lon = p['coords'].split(',')
+                    share_link = f"https://www.google.com/maps?q={lat},{lon}"
+                    st.text_input("Lien de partage :", value=share_link, key=f"link{i}")
+                else:
+                    st.warning("Pas de coordonnées à partager.")
+            # Renommer & éditer vertus
+            new_name = c4.text_input("✏️ Nom :", value=p['nom'], key=f"rn{i}")
+            if c4.button("💾 Nom", key=f"svn{i}"):
+                p['nom'] = new_name
+                open(ARCHIVES_PATH,'w',encoding='utf-8').write(json.dumps(archives,ensure_ascii=False,indent=2))
+                st.success("Nom mis à jour.")
+            new_virt = st.text_area("💊 Modifier vertus :", value=p.get('vertus',''), key=f"vrt{i}")
+            if st.button("💾 Vertus", key=f"svv{i}"):
+                p['vertus'] = new_virt
+                open(ARCHIVES_PATH,'w',encoding='utf-8').write(json.dumps(archives,ensure_ascii=False,indent=2))
+                st.success("Vertus mises à jour.")
     st.stop()
 
-# --- Recherche par vertu page ---
+# --- Page Recherche ---
 if state.page == 'search':
     st.title("🔍 Recherche par vertu")
-    keyword = st.text_input("Saisir un mot-clé pour rechercher une vertu", "")
+    keyword = st.text_input("Mot-clé :", "")
     if keyword:
-        results = [p for p in archives if keyword.lower() in (p.get('vertus', '').lower())]
+        results = [p for p in archives if keyword.lower() in p.get('vertus','').lower()]
         if results:
             for p in results:
                 with st.expander(f"{p['nom']} ({p['date'][:10]})"):
-                    st.write(f"📅 {p['date']}")
-                    st.write(f"🔍 Vertus : {p.get('vertus', 'Aucune vertu enregistrée')}")
-                    c1, c2 = st.columns(2)
-                    if c1.button("📍 Localiser", key=f"loc_{p['nom']}"):
+                    st.write(f"🔍 Vertus : {p.get('vertus')}")
+                    if st.button("📍 Localiser", key=f"locs_{p['nom']}"):
                         state.selected_coords = p.get('coords')
-                        state.selected_name = p['nom']
                         state.page = 'map'
                         st.rerun()
-                    if c2.button("❌ Supprimer", key=f"del_{p['nom']}"):
-                        archives.remove(p)
-                        open(ARCHIVES_PATH, 'w', encoding='utf-8').write(json.dumps(archives, ensure_ascii=False, indent=2))
-                        st.success("Supprimée.")
-                        st.rerun()
         else:
-            st.write(f"Aucune plante trouvée avec le mot-clé '{keyword}'.")
+            st.write("Aucun résultat.")
+    st.stop()
 
-# --- Identification page ---
+# --- Page Identification ---
 if state.page == 'home':
     st.title("📷🌿 Identifier une plante + vertus")
-    up = st.file_uploader("Photo", type=["jpg", "jpeg", "png"])
+    up = st.file_uploader("Photo", type=["jpg","jpeg","png"])
     if up:
         img_bytes = up.read()
         st.image(Image.open(io.BytesIO(img_bytes)), use_container_width=True)
@@ -163,56 +166,54 @@ if state.page == 'home':
         try:
             resp = requests.post(
                 f"https://my-api.plantnet.org/v2/identify/all?api-key={PLANTNET_API_KEY}",
-                files={"images": (up.name, io.BytesIO(img_bytes), mimetypes.guess_type(up.name)[0] or 'image/jpeg')},
-                data={"organs": "leaf"}, timeout=10)
+                files={"images":(up.name,io.BytesIO(img_bytes),mimetypes.guess_type(up.name)[0] or 'image/jpeg')},
+                data={"organs":"leaf"}, timeout=10)
             resp.raise_for_status()
-            results = resp.json().get('results', [])
-            sug = results[:3]
-            # Afficher suggestions cliquables
-            for idx, s in enumerate(sug, 1):
+            sug = resp.json().get('results',[])[:3]
+            for idx, s in enumerate(sug,1):
                 sci = s['species']['scientificNameWithoutAuthor']
-                prob = round(s['score'] * 100, 1)
-                if st.button(f"{idx}. {sci} ({prob}%)", key=f"sugg{idx}"):
+                if st.button(f"{idx}. {sci}", key=f"sugg{idx}"):
                     state.plant_name = sci
                     state.mistral_calls = []
             if state.plant_name is None and sug:
                 state.plant_name = sug[0]['species']['scientificNameWithoutAuthor']
         except:
-            st.warning("PlantNet failed, use Plant.id")
-            j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key": PLANTID_API_KEY}, files={"images": img_bytes}).json()
-            s = j['suggestions'][0]
-            name = s['plant_name']
-            st.write(f"{name} ({s['probability'] * 100:.1f}%)")
-            state.plant_name = name
+            st.warning("PlantNet failed, fallback to Plant.id")
+            j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key":PLANTID_API_KEY}, files={"images":img_bytes}).json()
+            state.plant_name = j['suggestions'][0]['plant_name']
+            st.write(state.plant_name)
+
         # Mistral
         name = state.plant_name
-        if name in cache:
-            v = cache[name]
-        else:
-            now = datetime.utcnow()
-            state.mistral_calls = [t for t in state.mistral_calls if now - t < timedelta(seconds=60)]
-            if len(state.mistral_calls) < 3:
-                body = {"model": "mistral-tiny", "messages": [{"role": "user", "content": f"Nom courant {name}, comestible, vertus médicinales?"}], "max_tokens": 300}
-                h = {"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"}
-                j = requests.post("https://api.mistral.ai/v1/chat/completions", headers=h, json=body).json()
-                v = j['choices'][0]['message']['content']
-                cache[name] = v
-                open(CACHE_PATH, 'w').write(json.dumps(cache, ensure_ascii=False, indent=2))
-                state.mistral_calls.append(now)
+        if name:
+            if name in cache:
+                v = cache[name]
             else:
-                v = "Limite atteinte."
-        st.markdown(f"### 🌿 Vertus de **{name}**")
-        st.write(v)
-        question = st.text_input("Pose une autre question sur cette plante :", key="extra_q")
-        if question:
-            body = {"model": "mistral-tiny", "messages": [{"role": "user", "content": f"{name}: {question}"}], "max_tokens": 300}
-            h = {"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"}
-            j = requests.post("https://api.mistral.ai/v1/chat/completions", headers=h, json=body).json()
-            st.write(j['choices'][0]['message']['content'])
-        if st.button("✅ Archiver cette plante"):
-            archives.append({"nom": name, "date": datetime.now().isoformat(), "coords": state.coords, "vertus": v})
-            open(ARCHIVES_PATH, 'w').write(json.dumps(archives, ensure_ascii=False, indent=2))
-            st.success("Archivée !")
+                now = datetime.utcnow()
+                state.mistral_calls = [t for t in state.mistral_calls if now - t < timedelta(seconds=60)]
+                if len(state.mistral_calls) < 3:
+                    body = {"model":"mistral-tiny","messages":[{"role":"user","content":f"Cette plante '{name}', comestible, vertus médicinales?"}],"max_tokens":300}
+                    h = {"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
+                    j = requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
+                    v = j['choices'][0]['message']['content']
+                    cache[name] = v
+                    open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
+                    state.mistral_calls.append(now)
+                else:
+                    v = "Limite atteinte."
+            st.markdown(f"### 🌿 Vertus de **{name}**")
+            st.write(v)
+            # Question libre
+            q = st.text_input("❓ Autre question ?", key="extra_q")
+            if q:
+                body = {"model":"mistral-tiny","messages":[{"role":"user","content":f"À propos de '{name}', {q}"}],"max_tokens":300}
+                h = {"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
+                ans = requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
+                st.write(ans['choices'][0]['message']['content'])
+            if st.button("✅ Archiver cette plante"):
+                archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v})
+                open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
+                st.success("Archivée !")
 
 
 
