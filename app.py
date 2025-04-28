@@ -7,7 +7,6 @@ import mimetypes
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
-import pandas as pd
 import pydeck as pdk
 
 # --- Initialisation de la page Streamlit ---
@@ -36,28 +35,7 @@ if 'selected_name' not in state: state.selected_name = None
 if 'show_map' not in state: state.show_map = False
 if 'mistral_calls' not in state: state.mistral_calls = []
 if 'plant_name' not in state: state.plant_name = None
-
-# --- Lire coords depuis params URL ---
-params = st.query_params
-if 'latlon' in params and params['latlon']:
-    state.coords = params['latlon'][0]
-
-# --- Si pas de coords, injecter JS pour demander GPS ---
-if not state.coords:
-    js = '''<script>
-if(navigator.geolocation){
-  navigator.geolocation.getCurrentPosition(
-    pos=>{
-      const c=pos.coords.latitude+','+pos.coords.longitude;
-      const url=window.location.pathname+'?latlon='+c;
-      window.history.replaceState({},'',url);
-      window.location.reload();
-    },
-    err=>console.warn(err)
-  );
-}
-</script>'''
-    st.components.v1.html(js)
+if 'vertus' not in state: state.vertus = None
 
 # --- Fonction pour afficher la carte interactive avec pydeck ---
 def show_interactive_map(archives):
@@ -231,9 +209,24 @@ if state.page=='home':
             else:
                 v="Virtues are cached and won't be retrieved until later."
         st.write(f"🌱 Vertus : {v}")
+        state.vertus = v  # Store the virtues in the session state
+
+        # Option pour archiver la plante
+        if st.button("📚 Archiver cette plante"):
+            if state.plant_name and state.vertus:
+                new_entry = {
+                    'nom': state.plant_name,
+                    'date': datetime.utcnow().isoformat(),
+                    'vertus': state.vertus,
+                    'coords': state.coords or ''
+                }
+                archives.append(new_entry)
+                open(ARCHIVES_PATH, 'w', encoding='utf-8').write(json.dumps(archives, ensure_ascii=False, indent=2))
+                st.success("Plante archivée avec succès !")
 
     if st.button("🔙 Retour accueil"):
         state.page = 'home'
+
 
 
 
