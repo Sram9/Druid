@@ -37,14 +37,13 @@ if 'mistral_calls' not in state: state.mistral_calls = []
 if 'plant_name' not in state: state.plant_name = None
 
 # --- Lire coords depuis params URL ---
-params = st.experimental_get_query_params()
+params = st.query_params
 if 'latlon' in params and params['latlon']:
-    state.coords = params['latlon'][0]
+    state.coords = params['latlon']
 
 # --- Si pas de coords, injecter JS pour demander GPS ---
 if not state.coords:
-    with st.spinner("Recherche de votre position GPS..."):
-        js = '''<script>
+    js = '''<script>
 if(navigator.geolocation){
   navigator.geolocation.getCurrentPosition(
     pos=>{
@@ -57,7 +56,7 @@ if(navigator.geolocation){
   );
 }
 </script>'''
-        st.components.v1.html(js)
+    st.components.v1.html(js)
 
 # --- Sidebar menu ---
 with st.sidebar:
@@ -76,15 +75,12 @@ if state.page=='archives':
     sorted_archives = sorted(archives, key=lambda p: p['nom'] if order=='Nom' else p['date'])
     for i,p in enumerate(sorted_archives):
         with st.expander(f"{p['nom']} ({p['date'][:10]})"):
-            st.write(f"🗕️ {p['date']}")
+            st.write(f"📅 {p['date']}")
             c1,c2,c3 = st.columns(3)
             if c1.button("📍 Localiser", key=f"loc{i}"):
-                if p.get('coords'):
-                    state.selected_coords = p.get('coords')
-                    state.selected_name = p['nom']
-                    state.show_map = True
-                else:
-                    st.warning("❌ Cette plante n'a pas de coordonnées GPS enregistrées.")
+                state.selected_coords = p.get('coords')
+                state.selected_name = p['nom']
+                state.show_map = True
             if c2.button("🔍 Vertus", key=f"virt{i}"):
                 st.write(p.get('vertus','Aucune vertu enregistrée'))
             if c3.button("❌ Supprimer", key=f"del{i}"):
@@ -98,14 +94,14 @@ if state.page=='archives':
                 st.success("Nom mis à jour")
     if state.show_map:
         st.markdown("---")
-        st.markdown(f"### 🗓️ Localisation de : {state.selected_name}")
+        st.markdown(f"### 🗺️ Localisation de : {state.selected_name}")
         if state.selected_coords:
             try:
                 lat,lon = state.selected_coords.split(',')
                 df = pd.DataFrame([{'lat':float(lat),'lon':float(lon)}])
                 st.map(df)
                 link = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lon}"
-                st.markdown(f"[🧽 Démarrer la navigation]({link})")
+                st.markdown(f"[🧭 Démarrer la navigation]({link})")
             except:
                 st.error("⚠️ Coordonnées invalides.")
         else:
@@ -123,16 +119,13 @@ if state.page=='search':
         if results:
             for p in results:
                 with st.expander(f"{p['nom']} ({p['date'][:10]})"):
-                    st.write(f"🗕️ {p['date']}")
+                    st.write(f"📅 {p['date']}")
                     st.write(f"🔍 Vertus : {p.get('vertus', 'Aucune vertu enregistrée')}")
                     c1, c2 = st.columns(2)
                     if c1.button("📍 Localiser", key=f"loc_{p['nom']}"):
-                        if p.get('coords'):
-                            state.selected_coords = p.get('coords')
-                            state.selected_name = p['nom']
-                            state.show_map = True
-                        else:
-                            st.warning("❌ Cette plante n'a pas de coordonnées GPS enregistrées.")
+                        state.selected_coords = p.get('coords')
+                        state.selected_name = p['nom']
+                        state.show_map = True
                     if c2.button("❌ Supprimer", key=f"del_{p['nom']}"):
                         archives.remove(p)
                         open(ARCHIVES_PATH, 'w', encoding='utf-8').write(json.dumps(archives, ensure_ascii=False, indent=2))
@@ -166,7 +159,7 @@ if state.page=='home':
             if state.plant_name is None and sug:
                 state.plant_name = sug[0]['species']['scientificNameWithoutAuthor']
         except:
-            st.warning("PlantNet échoué, utilisation de Plant.id")
+            st.warning("PlantNet failed, use Plant.id")
             j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key":PLANTID_API_KEY}, files={"images":img_bytes}).json()
             s=j['suggestions'][0]
             name=s['plant_name']
@@ -193,7 +186,7 @@ if state.page=='home':
         if st.button("✅ Archiver cette plante"):
             archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v})
             open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
-            st.success("Archiviée !")
+            st.success("Archivée !")
 
 
 
