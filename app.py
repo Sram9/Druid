@@ -9,24 +9,19 @@ from dotenv import load_dotenv
 from PIL import Image
 import pandas as pd
 
-# --- Initialisation de la page Streamlit ---
 st.set_page_config(page_title="Plante + Vertus", layout="centered")
 
-# --- Charger les clés depuis .env ---
 load_dotenv()
 PLANTNET_API_KEY = os.getenv("PLANTNET_API_KEY")
 PLANTID_API_KEY = os.getenv("PLANTID_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
-# --- Fichiers de stockage ---
 CACHE_PATH = "cache_virtues.json"
 ARCHIVES_PATH = "archives.json"
 
-# --- Charger ou initialiser cache et archives ---
 cache = json.load(open(CACHE_PATH, "r", encoding="utf-8")) if os.path.exists(CACHE_PATH) else {}
 archives = json.load(open(ARCHIVES_PATH, "r", encoding="utf-8")) if os.path.exists(ARCHIVES_PATH) else []
 
-# --- Session state defaults ---
 state = st.session_state
 if 'page' not in state: state.page = 'home'
 if 'coords' not in state: state.coords = None
@@ -36,29 +31,10 @@ if 'show_map' not in state: state.show_map = False
 if 'mistral_calls' not in state: state.mistral_calls = []
 if 'plant_name' not in state: state.plant_name = None
 
-# --- Lire coords depuis params URL ---
 params = st.query_params
 if 'latlon' in params and params['latlon']:
     state.coords = params['latlon']
 
-# --- Si pas de coords, injecter JS pour demander GPS ---
-if not state.coords:
-    js = '''<script>
-if(navigator.geolocation){
-  navigator.geolocation.getCurrentPosition(
-    pos=>{
-      const c=pos.coords.latitude+','+pos.coords.longitude;
-      const url=window.location.pathname+'?latlon='+c;
-      window.history.replaceState({},'',url);
-      window.location.reload();
-    },
-    err=>console.warn(err)
-  );
-}
-</script>'''
-    st.components.v1.html(js)
-
-# --- Sidebar menu ---
 with st.sidebar:
     st.markdown("## 📚 Menu")
     if st.button(("✅ " if state.page=='home' else "") + "🌿 Nouvelle identification"):
@@ -68,7 +44,6 @@ with st.sidebar:
     if st.button(("✅ " if state.page=='search' else "") + "🔍 Recherche par vertu"):
         state.page='search'
 
-# --- Archives page ---
 if state.page=='archives':
     st.title("📚 Plantes archivées")
     order = st.radio("Trier par :", ["Nom","Date"])
@@ -110,7 +85,6 @@ if state.page=='archives':
             state.show_map=False
     st.stop()
 
-# --- Recherche par vertu page ---
 if state.page=='search':
     st.title("🔍 Recherche par vertu")
     keyword = st.text_input("Saisir un mot-clé pour rechercher une vertu", "")
@@ -135,7 +109,6 @@ if state.page=='search':
     if st.button("🔙 Retour archives"):
         state.page = 'archives'
 
-# --- Identification page ---
 if state.page=='home':
     st.title("📷🌿 Identifier une plante + vertus")
     up = st.file_uploader("Photo", type=["jpg","jpeg","png"])
@@ -172,7 +145,7 @@ if state.page=='home':
             now=datetime.utcnow()
             state.mistral_calls=[t for t in state.mistral_calls if now-t<timedelta(seconds=60)]
             if len(state.mistral_calls)<3:
-                body={"model":"mistral-tiny","messages":[{"role":"user","content":f"Nom courant {name}, comestible, vertus médicinales?"}], "max_tokens":200}
+                body={"model":"mistral-tiny","messages":[{"role":"user","content":f"Cette plante ({name}) est-elle comestible ou a-t-elle des vertus médicinales et, si oui, comment est-elle utilisée ?"}], "max_tokens":400}
                 h={"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
                 j=requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
                 v=j['choices'][0]['message']['content']
@@ -184,6 +157,32 @@ if state.page=='home':
         st.markdown(f"### 🌿 Vertus de **{name}**")
         st.write(v)
         if st.button("✅ Archiver cette plante"):
+            js = '''<script>
+if(navigator.geolocation){
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      const c=pos.coords.latitude+','+pos.coords.longitude;
+      const url=new URL(window.location);
+      url.searchParams.set('latlon',c);
+      window.location.href=url;
+    },
+    err=>{
+      alert("Position non obtenue. Vous pouvez localiser manuellement.");
+    }
+  );
+}
+</script>'''
+            st.components.v1.html(js)
+            st.info("Si la localisation GPS ne fonctionne pas, veuillez localiser manuellement.")
+
+        if not state.coords:
+            st.markdown("### 📍 Localiser manuellement")
+            lat = st.number_input("Latitude", format="%.6f")
+            lon = st.number_input("Longitude", format="%.6f")
+            if st.button("📍 Enregistrer position manuelle"):
+                state.coords = f"{lat},{lon}"
+
+        if state.coords:
             archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v})
             open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
             st.success("Archivée !")
