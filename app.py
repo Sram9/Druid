@@ -1,4 +1,6 @@
-import streamlit as st
+# Writing the updated app.py file for user
+
+app_py_content = """import streamlit as st
 import requests
 import os
 import io
@@ -8,8 +10,6 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
 import pandas as pd
-import folium
-from streamlit_folium import st_folium
 
 st.set_page_config(page_title="Plante + Vertus", layout="centered")
 
@@ -30,8 +30,6 @@ if 'coords' not in state: state.coords = None
 if 'selected_coords' not in state: state.selected_coords = None
 if 'selected_name' not in state: state.selected_name = None
 if 'show_map' not in state: state.show_map = False
-if 'mistral_calls' not in state: state.mistral_calls = []
-if 'plant_name' not in state: state.plant_name = None
 
 params = st.query_params
 if 'latlon' in params and params['latlon']:
@@ -57,6 +55,7 @@ if state.page=='archives':
             if c1.button("📍 Localiser", key=f"loc{i}"):
                 state.selected_coords = p.get('coords')
                 state.selected_name = p['nom']
+                state.selected_index = archives.index(p)
                 state.show_map = True
             if c2.button("🔍 Vertus", key=f"virt{i}"):
                 st.write(p.get('vertus','Aucune vertu enregistrée'))
@@ -69,6 +68,7 @@ if state.page=='archives':
                 p['nom']=new
                 open(ARCHIVES_PATH,'w',encoding='utf-8').write(json.dumps(archives,ensure_ascii=False,indent=2))
                 st.success("Nom mis à jour")
+
     if state.show_map:
         st.markdown("---")
         st.markdown(f"### 🗺️ Localisation de : {state.selected_name}")
@@ -130,64 +130,40 @@ if state.page=='home':
                 prob=round(s['score']*100,1)
                 if st.button(f"{idx}. {sci} ({prob}%)", key=f"sugg{idx}"):
                     state.plant_name = sci
-                    state.mistral_calls = []
             if state.plant_name is None and sug:
                 state.plant_name = sug[0]['species']['scientificNameWithoutAuthor']
         except:
             st.warning("PlantNet failed, use Plant.id")
-            j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key":PLANTID_API_KEY}, files={"images":img_bytes}).json()
-            s=j['suggestions'][0]
-            name=s['plant_name']
-            st.write(f"{name} ({s['probability']*100:.1f}%)")
-            state.plant_name=name
-        name=state.plant_name
-        if name in cache:
-            v=cache[name]
-        else:
-            now=datetime.utcnow()
-            state.mistral_calls=[t for t in state.mistral_calls if now-t<timedelta(seconds=60)]
-            if len(state.mistral_calls)<3:
-                body={"model":"mistral-tiny","messages":[{"role":"user","content":f"Cette plante ({name}) est-elle comestible ou a-t-elle des vertus médicinales et, si oui, comment est-elle utilisée ?"}], "max_tokens":400}
-                h={"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
-                j=requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
-                v=j['choices'][0]['message']['content']
-                cache[name]=v
-                open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
-                state.mistral_calls.append(now)
+        if state.plant_name:
+            name=state.plant_name
+            if name in cache:
+                v=cache[name]
             else:
-                v="Limite atteinte"
-        st.markdown(f"### 🌿 Vertus de **{name}**")
-        st.write(v)
-        if st.button("✅ Archiver cette plante"):
-            js = '''<script>
-if(navigator.geolocation){
-  navigator.geolocation.getCurrentPosition(
-    pos=>{
-      const c=pos.coords.latitude+','+pos.coords.longitude;
-      const url=new URL(window.location);
-      url.searchParams.set('latlon',c);
-      window.location.href=url;
-    },
-    err=>{
-      alert("Position non obtenue. Vous pouvez localiser manuellement.");
-    }
-  );
-}
-</script>'''
-            st.components.v1.html(js)
-            st.info("Si la localisation GPS ne fonctionne pas, veuillez localiser manuellement.")
+                now=datetime.utcnow()
+                state.mistral_calls=[t for t in state.mistral_calls if now-t<timedelta(seconds=60)]
+                if len(state.mistral_calls)<3:
+                    body={"model":"mistral-tiny","messages":[{"role":"user","content":f\"Cette plante ({name}) est-elle comestible ou a-t-elle des vertus médicinales et, si oui, comment est-elle utilisée ?\"}], "max_tokens":400}
+                    h={"Authorization\":f\"Bearer {MISTRAL_API_KEY}\",\"Content-Type\":\"application/json\"}
+                    j=requests.post(\"https://api.mistral.ai/v1/chat/completions\",headers=h,json=body).json()
+                    v=j['choices'][0]['message']['content']
+                    cache[name]=v
+                    open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
+                    state.mistral_calls.append(now)
+                else:
+                    v="Limite atteinte"
+            st.markdown(f"### 🌿 Vertus de **{name}**")
+            st.write(v)
+            if st.button("✅ Archiver cette plante"):
+                archives.append({"nom":name,"date\":datetime.now().isoformat(),\"coords\":state.coords,\"vertus\":v})
+                open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
+                st.success("Archivée !")
+"""
 
-        if not state.coords:
-            st.markdown("### 📍 Localiser manuellement")
-            lat = st.number_input("Latitude", format="%.6f")
-            lon = st.number_input("Longitude", format="%.6f")
-            if st.button("📍 Enregistrer position manuelle"):
-                state.coords = f"{lat},{lon}"
+file_path = '/mnt/data/app.py'
+with open(file_path, 'w') as f:
+    f.write(app_py_content)
 
-        if state.coords:
-            archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v})
-            open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
-            st.success("Archivée !")
+file_path
 
 
 
