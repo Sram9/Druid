@@ -43,7 +43,7 @@ else:
     st.text_input("👤 Identifiant utilisateur", key="user_id", value=state.user_id, disabled=True)
 
 # --- Lire coords depuis params URL ---
-params = st.query_params
+params = st.experimental_get_query_params()
 if 'latlon' in params and params['latlon']:
     state.coords = params['latlon'][0]
 
@@ -81,7 +81,7 @@ if state.page == 'map':
     map_type = st.radio("Afficher :", ["Mes plantes", "Toutes les plantes"])
     user_id = state.get("user_id", "")
     if map_type == "Mes plantes":
-        st.write(f"👤 Utilisateur : {user_id}")
+        st.write(f"👤 Mes plantes - Utilisateur : **{user_id}**")
     coords_list = []
     for p in archives:
         if map_type == "Mes plantes" and p.get("user") != user_id:
@@ -89,7 +89,8 @@ if state.page == 'map':
         if p.get('coords'):
             try:
                 lat, lon = map(float, p['coords'].split(','))
-                coords_list.append({'lat': lat, 'lon': lon, 'nom': p['nom']})
+                label = f"{p['nom']} (👤 {p.get('user', 'inconnu')})"
+                coords_list.append({'lat': lat, 'lon': lon, 'nom': label})
             except:
                 continue
     if coords_list:
@@ -119,7 +120,7 @@ if state.page == 'archives':
                     image_bytes = p['image'].encode('latin1') if isinstance(p['image'], str) else p['image']
                     with io.BytesIO(image_bytes) as buf:
                         img = Image.open(buf)
-                        st.image(img, caption="Photo de la plante", use_column_width=True)
+                        st.image(img, caption="Photo de la plante", use_container_width=True)
                 except Exception as e:
                     st.warning("Erreur d'affichage de l'image : " + str(e))
             c1, c2, c3, c4 = st.columns(4)
@@ -167,12 +168,58 @@ if state.page == 'home':
     st.title("🌿 Identifier une plante et découvrir ses vertus")
     uploaded_file = st.file_uploader("Choisissez une photo de plante à identifier 📷", type=['jpg', 'jpeg', 'png'])
     if uploaded_file:
-        st.image(uploaded_file, caption="Image sélectionnée", use_column_width=True)
+        st.image(uploaded_file, caption="Image sélectionnée", use_container_width=True)
         if st.button("🔍 Identifier cette plante"):
             image_bytes = uploaded_file.read()
-            # Ici, appel aux APIs (non inclus dans ce bloc)
-            st.info("🔧 Fonction d'identification à compléter avec appel API.")
 
+            # --- Appel Plant.id ---
+            headers = {'Content-Type': 'application/json', 'Api-Key': PLANTID_API_KEY}
+            data = {
+                "images": ["data:image/jpeg;base64," + base64.b64encode(image_bytes).decode()],
+                "organs": ["leaf"]
+            }
+            response = requests.post("https://api.plant.id/v2/identify", headers=headers, json=data)
+            if response.ok:
+                suggestions = response.json().get("suggestions", [])
+                if suggestions:
+                    best_match = suggestions[0]
+                    state.plant_name = best_match["plant_name"]
+                    st.success(f"🌿 Plante identifiée : **{state.plant_name}**")
+
+                    # --- Requête à Mistral ---
+                    question = f"Cette plante est-elle comestible ou a-t-elle des vertus médicinales et, si oui, comment est-elle utilisée ? Nom : {state.plant_name}"
+                    mistral_headers = {
+                        "Authorization": f"Bearer {MISTRAL_API_KEY}",
+                        "Content-Type": "application/json"
+                    }
+                    mistral_data = {
+                        "model": "mistral-small",
+                        "messages": [
+                            {"role": "user", "content": question}
+                        ]
+                    }
+                    r = requests.post("https://api.mistral.ai/v1/chat/completions", headers=mistral_headers, json=mistral_data)
+                    if r.ok:
+                        answer = r.json()['choices'][0]['message']['content']
+                        st.markdown(f"### 💊 Vertus médicinales proposées :\n{answer}")
+                        # Archive locale
+                        archives.append({
+                            "nom": state.plant_name,
+                            "date": datetime.now().isoformat(),
+                            "image": image_bytes.decode('latin1'),
+                            "coords": state.coords,
+                            "vertus": answer,
+                            "user": state.user_id
+                        })
+                        with open(ARCHIVES_PATH, 'w', encoding='utf-8') as f:
+                            json.dump(archives, f, ensure_ascii=False, indent=2)
+                        st.success("🌱 Plante archivée avec succès.")
+                    else:
+                        st.error("Erreur lors de la requête à Mistral.")
+                else:
+                    st.warning("Aucune plante reconnue.")
+            else:
+                st.error("Erreur lors de l'identification via Plant.id.")
 
 
 
