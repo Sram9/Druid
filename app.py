@@ -4,7 +4,6 @@ import os
 import io
 import json
 import mimetypes
-import base64
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
@@ -32,22 +31,34 @@ state = st.session_state
 for key, val in {
     'page': 'home', 'coords': None, 'selected_coords': None,
     'selected_name': None, 'show_map': False, 'mistral_calls': [],
-    'plant_name': None, 'conversation': [], 'latest_plant': None,
-    'archive_requested': False
+    'plant_name': None, 'conversation': []
 }.items():
     if key not in state:
         state[key] = val
 
 # --- Identifiant utilisateur ---
-if "user_id" not in state:
-    st.text_input("👤 Identifiant utilisateur", key="user_id")
-else:
-    st.text_input("👤 Identifiant utilisateur", key="user_id", value=state.user_id, disabled=True)
+st.text_input("👤 Identifiant utilisateur", key="user_id")
 
 # --- Lire coords depuis params URL ---
 params = st.query_params
 if 'latlon' in params and params['latlon']:
     state.coords = params['latlon'][0]
+
+# --- Si pas de coords, injecter JS pour demander GPS ---
+if not state.coords:
+    js = '''<script>
+if(navigator.geolocation){
+  navigator.geolocation.getCurrentPosition(
+    pos=>{ const c=pos.coords.latitude+','+pos.coords.longitude;
+      const url=window.location.pathname+'?latlon='+c;
+      window.history.replaceState({},'',url);
+      window.location.reload();
+    },
+    err=>console.warn(err)
+  );
+}
+</script>'''
+    st.components.v1.html(js)
 
 # --- Sidebar menu ---
 with st.sidebar:
@@ -58,19 +69,14 @@ with st.sidebar:
         state.page = 'archives'
     if st.button(("✅ " if state.page == 'search' else "") + "🔍 Recherche par vertu"):
         state.page = 'search'
-    if st.button(("✅ " if state.page == 'map' else "") + "🗺️ Mes plantes" if state.get("user_id") else "🗺️ Carte des plantes"):
+    if st.button(("✅ " if state.page == 'map' else "") + "🗺️ Carte des plantes"):
         state.page = 'map'
 
 # --- Page Carte des plantes ---
 if state.page == 'map':
     st.title("🗺️ Carte des plantes géolocalisées")
     map_type = st.radio("Afficher :", ["Mes plantes", "Toutes les plantes"])
-    user_id = state.get("user_id") or ""
-
-    if map_type == "Mes plantes" and not user_id:
-        st.warning("Veuillez saisir un identifiant utilisateur pour afficher vos plantes.")
-        st.stop()
-
+    user_id = state.get("user_id", "")
     coords_list = []
     for p in archives:
         if map_type == "Mes plantes" and p.get("user") != user_id:
@@ -78,8 +84,7 @@ if state.page == 'map':
         if p.get('coords'):
             try:
                 lat, lon = map(float, p['coords'].split(','))
-                label = f"{p['nom']} (👤 {p.get('user', 'inconnu')})"
-                coords_list.append({'lat': lat, 'lon': lon, 'nom': label})
+                coords_list.append({'lat': lat, 'lon': lon, 'nom': p['nom']})
             except:
                 continue
     if coords_list:
@@ -104,12 +109,6 @@ if state.page == 'archives':
     for i, p in enumerate(sorted_arch):
         with st.expander(f"{p['nom']} ({p['date'][:10]})"):
             st.write(f"📅 {p['date']}")
-            if 'image' in p:
-                try:
-                    img_data = p['image'].encode("latin1")
-                    st.image(Image.open(io.BytesIO(img_data)), caption="Photo de la plante", use_container_width=True)
-                except Exception as e:
-                    st.warning(f"Erreur lors de l'affichage de l'image : {e}")
             c1, c2, c3, c4 = st.columns(4)
             if c1.button("📍 Localiser", key=f"loc{i}"):
                 state.selected_coords = p.get('coords')
@@ -120,7 +119,7 @@ if state.page == 'archives':
                 open(ARCHIVES_PATH,'w',encoding='utf-8').write(json.dumps(archives,ensure_ascii=False,indent=2))
                 st.success("Plante supprimée")
                 st.rerun()
-            if c3.button("📌 Partager sur carte commune", key=f"share{i}"):
+            if c3.button("🔗 Partager", key=f"share{i}"):
                 if p.get('coords'):
                     lat, lon = p['coords'].split(',')
                     share_link = f"https://www.google.com/maps?q={lat},{lon}"
@@ -175,23 +174,46 @@ if state.page == 'home':
             sug = resp.json().get('results',[])[:3]
             for idx, s in enumerate(sug,1):
                 sci = s['species']['scientificNameWithoutAuthor']
-                score = s.get('score', 0)
-                if st.button(f"{idx}. {sci} ({score*100:.1f}%)", key=f"sugg{idx}"):
+                if st.button(f"{idx}. {sci}", key=f"sugg{idx}"):
                     state.plant_name = sci
                     state.mistral_calls = []
             if state.plant_name is None and sug:
                 state.plant_name = sug[0]['species']['scientificNameWithoutAuthor']
         except:
             st.warning("PlantNet failed, fallback to Plant.id")
-            j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key":PLANTID_API_KEY}, json={"images":[up],"organs":["leaf"]}).json()
-            plant_id_results = j.get('suggestions',[])[:3]
-            for idx, s in enumerate(plant_id_results,1):
-                name = s.get('plant_name','Inconnu')
-                probability = s.get('probability', 0)
-                if st.button(f"{idx}. {name} ({probability*100:.1f}%)", key=f"pid_sugg{idx}"):
-                    state.plant_name = name
-                    state.mistral_calls = []
-    st.stop()
+            j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key":PLANTID_API_KEY}, files={"images":img_bytes}).json()
+            state.plant_name = j['suggestions'][0]['plant_name']
+            st.write(state.plant_name)
+
+        name = state.plant_name
+        if name:
+            if name in cache:
+                v = cache[name]
+            else:
+                now = datetime.utcnow()
+                state.mistral_calls = [t for t in state.mistral_calls if now - t < timedelta(seconds=60)]
+                if len(state.mistral_calls) < 3:
+                    body = {"model":"mistral-tiny","messages":[{"role":"user","content":f"Cette plante '{name}', comestible, vertus médicinales?"}],"max_tokens":300}
+                    h = {"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
+                    j = requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
+                    v = j['choices'][0]['message']['content']
+                    cache[name] = v
+                    open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
+                    state.mistral_calls.append(now)
+                else:
+                    v = "Limite atteinte."
+            st.markdown(f"### 🌿 Vertus de **{name}**")
+            st.write(v)
+            q = st.text_input("❓ Autre question ?", key="extra_q")
+            if q:
+                body = {"model":"mistral-tiny","messages":[{"role":"user","content":f"À propos de '{name}', {q}"}],"max_tokens":300}
+                h = {"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
+                ans = requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
+                st.write(ans['choices'][0]['message']['content'])
+            if st.button("✅ Archiver cette plante"):
+                archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v,"user":user_id})
+                open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
+                st.success("Archivée !")
 
 
 
