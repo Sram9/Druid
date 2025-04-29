@@ -37,7 +37,10 @@ for key, val in {
         state[key] = val
 
 # --- Identifiant utilisateur ---
-st.text_input("👤 Identifiant utilisateur", key="user_id")
+if "user_id" not in state:
+    st.text_input("👤 Identifiant utilisateur", key="user_id")
+else:
+    st.text_input("👤 Identifiant utilisateur", key="user_id", value=state.user_id, disabled=True)
 
 # --- Lire coords depuis params URL ---
 params = st.query_params
@@ -77,6 +80,8 @@ if state.page == 'map':
     st.title("🗺️ Carte des plantes géolocalisées")
     map_type = st.radio("Afficher :", ["Mes plantes", "Toutes les plantes"])
     user_id = state.get("user_id", "")
+    if map_type == "Mes plantes":
+        st.write(f"👤 Utilisateur : {user_id}")
     coords_list = []
     for p in archives:
         if map_type == "Mes plantes" and p.get("user") != user_id:
@@ -109,6 +114,8 @@ if state.page == 'archives':
     for i, p in enumerate(sorted_arch):
         with st.expander(f"{p['nom']} ({p['date'][:10]})"):
             st.write(f"📅 {p['date']}")
+            if 'image' in p:
+                st.image(p['image'], caption="Photo de la plante", use_column_width=True)
             c1, c2, c3, c4 = st.columns(4)
             if c1.button("📍 Localiser", key=f"loc{i}"):
                 state.selected_coords = p.get('coords')
@@ -119,7 +126,7 @@ if state.page == 'archives':
                 open(ARCHIVES_PATH,'w',encoding='utf-8').write(json.dumps(archives,ensure_ascii=False,indent=2))
                 st.success("Plante supprimée")
                 st.rerun()
-            if c3.button("🔗 Partager", key=f"share{i}"):
+            if c3.button("📌 Partager sur carte commune", key=f"share{i}"):
                 if p.get('coords'):
                     lat, lon = p['coords'].split(',')
                     share_link = f"https://www.google.com/maps?q={lat},{lon}"
@@ -174,7 +181,8 @@ if state.page == 'home':
             sug = resp.json().get('results',[])[:3]
             for idx, s in enumerate(sug,1):
                 sci = s['species']['scientificNameWithoutAuthor']
-                if st.button(f"{idx}. {sci}", key=f"sugg{idx}"):
+                score = s.get('score', 0)
+                if st.button(f"{idx}. {sci} ({score*100:.1f}%)", key=f"sugg{idx}"):
                     state.plant_name = sci
                     state.mistral_calls = []
             if state.plant_name is None and sug:
@@ -211,9 +219,10 @@ if state.page == 'home':
                 ans = requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
                 st.write(ans['choices'][0]['message']['content'])
             if st.button("✅ Archiver cette plante"):
-                archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v,"user":user_id})
+                archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v,"user":user_id,"image":up.getvalue().decode("latin1")})
                 open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
                 st.success("Archivée !")
+
 
 
 
