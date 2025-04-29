@@ -48,22 +48,6 @@ params = st.query_params
 if 'latlon' in params and params['latlon']:
     state.coords = params['latlon'][0]
 
-# --- Si pas de coords, injecter JS pour demander GPS ---
-if not state.coords:
-    js = '''<script>
-if(navigator.geolocation){
-  navigator.geolocation.getCurrentPosition(
-    pos=>{ const c=pos.coords.latitude+','+pos.coords.longitude;
-      const url=window.location.pathname+'?latlon='+c;
-      window.history.replaceState({},'',url);
-      window.location.reload();
-    },
-    err=>console.warn(err)
-  );
-}
-</script>'''
-    st.components.v1.html(js)
-
 # --- Sidebar menu ---
 with st.sidebar:
     st.markdown("## 📚 Menu")
@@ -81,8 +65,6 @@ if state.page == 'map':
     st.title("🗺️ Carte des plantes géolocalisées")
     map_type = st.radio("Afficher :", ["Mes plantes", "Toutes les plantes"])
     user_id = state.get("user_id", "")
-    if map_type == "Mes plantes":
-        st.write(f"👤 Mes plantes - Utilisateur : **{user_id}**")
     coords_list = []
     for p in archives:
         if map_type == "Mes plantes" and p.get("user") != user_id:
@@ -182,7 +164,12 @@ if state.page == 'home':
             if response.ok:
                 suggestions = response.json().get("suggestions", [])
                 if suggestions:
-                    best_match = suggestions[0]
+                    options = [
+                        f"{s['plant_name']} ({int(s['probability'] * 100)}%)"
+                        for s in suggestions[:3]
+                    ]
+                    choice = st.radio("Choisissez une plante parmi les suggestions :", options)
+                    best_match = suggestions[options.index(choice)]
                     state.plant_name = best_match["plant_name"]
                     state.latest_plant = {
                         "nom": state.plant_name,
@@ -212,6 +199,21 @@ if state.page == 'home':
                         st.markdown(f"### 💊 Vertus médicinales proposées :\n{answer}")
 
                         if st.button("📥 Archiver cette plante"):
+                            if not state.coords:
+                                js = '''<script>
+if(navigator.geolocation){
+  navigator.geolocation.getCurrentPosition(
+    pos=>{ const c=pos.coords.latitude+','+pos.coords.longitude;
+      const url=window.location.pathname+'?latlon='+c;
+      window.history.replaceState({},'',url);
+      window.location.reload();
+    },
+    err=>console.warn(err)
+  );
+}
+</script>'''
+                                st.components.v1.html(js)
+                                st.stop()
                             state.latest_plant['coords'] = state.coords
                             archives.append(state.latest_plant)
                             with open(ARCHIVES_PATH, 'w', encoding='utf-8') as f:
@@ -224,6 +226,7 @@ if state.page == 'home':
                     st.warning("Aucune plante reconnue.")
             else:
                 st.error("Erreur lors de l'identification via Plant.id.")
+
 
 
 
