@@ -4,6 +4,7 @@ import os
 import io
 import json
 import mimetypes
+import base64
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
@@ -31,7 +32,7 @@ state = st.session_state
 for key, val in {
     'page': 'home', 'coords': None, 'selected_coords': None,
     'selected_name': None, 'show_map': False, 'mistral_calls': [],
-    'plant_name': None, 'conversation': []
+    'plant_name': None, 'conversation': [], 'latest_plant': None
 }.items():
     if key not in state:
         state[key] = val
@@ -43,7 +44,7 @@ else:
     st.text_input("👤 Identifiant utilisateur", key="user_id", value=state.user_id, disabled=True)
 
 # --- Lire coords depuis params URL ---
-params = st.experimental_get_query_params()
+params = st.query_params
 if 'latlon' in params and params['latlon']:
     state.coords = params['latlon'][0]
 
@@ -172,7 +173,6 @@ if state.page == 'home':
         if st.button("🔍 Identifier cette plante"):
             image_bytes = uploaded_file.read()
 
-            # --- Appel Plant.id ---
             headers = {'Content-Type': 'application/json', 'Api-Key': PLANTID_API_KEY}
             data = {
                 "images": ["data:image/jpeg;base64," + base64.b64encode(image_bytes).decode()],
@@ -184,9 +184,16 @@ if state.page == 'home':
                 if suggestions:
                     best_match = suggestions[0]
                     state.plant_name = best_match["plant_name"]
+                    state.latest_plant = {
+                        "nom": state.plant_name,
+                        "date": datetime.now().isoformat(),
+                        "image": image_bytes.decode('latin1'),
+                        "vertus": "",
+                        "user": state.user_id
+                    }
                     st.success(f"🌿 Plante identifiée : **{state.plant_name}**")
 
-                    # --- Requête à Mistral ---
+                    # Appel à Mistral
                     question = f"Cette plante est-elle comestible ou a-t-elle des vertus médicinales et, si oui, comment est-elle utilisée ? Nom : {state.plant_name}"
                     mistral_headers = {
                         "Authorization": f"Bearer {MISTRAL_API_KEY}",
@@ -201,25 +208,23 @@ if state.page == 'home':
                     r = requests.post("https://api.mistral.ai/v1/chat/completions", headers=mistral_headers, json=mistral_data)
                     if r.ok:
                         answer = r.json()['choices'][0]['message']['content']
+                        state.latest_plant['vertus'] = answer
                         st.markdown(f"### 💊 Vertus médicinales proposées :\n{answer}")
-                        # Archive locale
-                        archives.append({
-                            "nom": state.plant_name,
-                            "date": datetime.now().isoformat(),
-                            "image": image_bytes.decode('latin1'),
-                            "coords": state.coords,
-                            "vertus": answer,
-                            "user": state.user_id
-                        })
-                        with open(ARCHIVES_PATH, 'w', encoding='utf-8') as f:
-                            json.dump(archives, f, ensure_ascii=False, indent=2)
-                        st.success("🌱 Plante archivée avec succès.")
+
+                        if st.button("📥 Archiver cette plante"):
+                            state.latest_plant['coords'] = state.coords
+                            archives.append(state.latest_plant)
+                            with open(ARCHIVES_PATH, 'w', encoding='utf-8') as f:
+                                json.dump(archives, f, ensure_ascii=False, indent=2)
+                            st.success("🌱 Plante archivée avec succès.")
+                            state.latest_plant = None
                     else:
                         st.error("Erreur lors de la requête à Mistral.")
                 else:
                     st.warning("Aucune plante reconnue.")
             else:
                 st.error("Erreur lors de l'identification via Plant.id.")
+
 
 
 
