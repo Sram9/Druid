@@ -115,7 +115,11 @@ if state.page == 'archives':
         with st.expander(f"{p['nom']} ({p['date'][:10]})"):
             st.write(f"📅 {p['date']}")
             if 'image' in p:
-                st.image(p['image'], caption="Photo de la plante", use_column_width=True)
+                try:
+                    img_data = p['image'].encode("latin1")
+                    st.image(Image.open(io.BytesIO(img_data)), caption="Photo de la plante", use_column_width=True)
+                except Exception as e:
+                    st.warning(f"Erreur lors de l'affichage de l'image : {e}")
             c1, c2, c3, c4 = st.columns(4)
             if c1.button("📍 Localiser", key=f"loc{i}"):
                 state.selected_coords = p.get('coords')
@@ -210,18 +214,7 @@ if state.page == 'home':
                     state.mistral_calls.append(now)
                 else:
                     v = "Limite atteinte."
-            st.markdown(f"### 🌿 Vertus de **{name}**")
-            st.write(v)
-            q = st.text_input("❓ Autre question ?", key="extra_q")
-            if q:
-                body = {"model":"mistral-tiny","messages":[{"role":"user","content":f"À propos de '{name}', {q}"}],"max_tokens":300}
-                h = {"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
-                ans = requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
-                st.write(ans['choices'][0]['message']['content'])
-            if st.button("✅ Archiver cette plante"):
-                archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v,"user":user_id,"image":up.getvalue().decode("latin1")})
-                open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
-                st.success("Archivée !")
+            st.markdown(f
 
 
 
