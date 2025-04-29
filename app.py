@@ -94,7 +94,105 @@ if state.page == 'map':
     st.map(df)
     st.stop()
 
-# (le reste du code reste inchangé)
+# --- Page Archives ---
+if state.page == 'archives':
+    st.title("📚 Plantes archivées")
+    order = st.radio("Trier par :", ["Nom", "Date"])
+    user_id = state.get("user_id", "")
+    filtered_arch = [p for p in archives if p.get("user") == user_id]
+    sorted_arch = sorted(filtered_arch, key=lambda p: p['nom'] if order=='Nom' else p['date'])
+    for i, p in enumerate(sorted_arch):
+        with st.expander(f"{p['nom']} ({p['date'][:10]})"):
+            st.write(f"📅 {p['date']}")
+            if 'image' in p:
+                try:
+                    img_data = p['image'].encode("latin1")
+                    st.image(Image.open(io.BytesIO(img_data)), caption="Photo de la plante", use_container_width=True)
+                except Exception as e:
+                    st.warning(f"Erreur lors de l'affichage de l'image : {e}")
+            c1, c2, c3, c4 = st.columns(4)
+            if c1.button("📍 Localiser", key=f"loc{i}"):
+                state.selected_coords = p.get('coords')
+                state.page = 'map'
+                st.rerun()
+            if c2.button("❌ Supprimer", key=f"del{i}"):
+                archives.remove(p)
+                open(ARCHIVES_PATH,'w',encoding='utf-8').write(json.dumps(archives,ensure_ascii=False,indent=2))
+                st.success("Plante supprimée")
+                st.rerun()
+            if c3.button("📌 Partager sur carte commune", key=f"share{i}"):
+                if p.get('coords'):
+                    lat, lon = p['coords'].split(',')
+                    share_link = f"https://www.google.com/maps?q={lat},{lon}"
+                    st.text_input("Lien de partage :", value=share_link, key=f"link{i}")
+                else:
+                    st.warning("Pas de coordonnées à partager.")
+            new_name = c4.text_input("✏️ Nom :", value=p['nom'], key=f"rn{i}")
+            if c4.button("💾 Nom", key=f"svn{i}"):
+                p['nom'] = new_name
+                open(ARCHIVES_PATH,'w',encoding='utf-8').write(json.dumps(archives,ensure_ascii=False,indent=2))
+                st.success("Nom mis à jour.")
+            new_virt = st.text_area("💊 Modifier vertus :", value=p.get('vertus',''), key=f"vrt{i}")
+            if st.button("💾 Vertus", key=f"svv{i}"):
+                p['vertus'] = new_virt
+                open(ARCHIVES_PATH,'w',encoding='utf-8').write(json.dumps(archives,ensure_ascii=False,indent=2))
+                st.success("Vertus mises à jour.")
+    st.stop()
+
+# --- Page Recherche ---
+if state.page == 'search':
+    st.title("🔍 Recherche par vertu")
+    keyword = st.text_input("Mot-clé :", "")
+    user_id = state.get("user_id", "")
+    if keyword:
+        results = [p for p in archives if keyword.lower() in p.get('vertus','').lower() and p.get("user") == user_id]
+        if results:
+            for p in results:
+                with st.expander(f"{p['nom']} ({p['date'][:10]})"):
+                    st.write(f"🔍 Vertus : {p.get('vertus')}")
+                    if st.button("📍 Localiser", key=f"locs_{p['nom']}"):
+                        state.selected_coords = p.get('coords')
+                        state.page = 'map'
+                        st.rerun()
+        else:
+            st.write("Aucun résultat.")
+    st.stop()
+
+# --- Page Identification ---
+if state.page == 'home':
+    st.title("📷🌿 Identifier une plante + vertus")
+    user_id = state.get("user_id", "")
+    up = st.file_uploader("Photo", type=["jpg","jpeg","png"])
+    if up:
+        img_bytes = up.read()
+        st.image(Image.open(io.BytesIO(img_bytes)), use_container_width=True)
+        try:
+            resp = requests.post(
+                f"https://my-api.plantnet.org/v2/identify/all?api-key={PLANTNET_API_KEY}",
+                files={"images":(up.name,io.BytesIO(img_bytes),mimetypes.guess_type(up.name)[0] or 'image/jpeg')},
+                data={"organs":"leaf"}, timeout=10)
+            resp.raise_for_status()
+            sug = resp.json().get('results',[])[:3]
+            for idx, s in enumerate(sug,1):
+                sci = s['species']['scientificNameWithoutAuthor']
+                score = s.get('score', 0)
+                if st.button(f"{idx}. {sci} ({score*100:.1f}%)", key=f"sugg{idx}"):
+                    state.plant_name = sci
+                    state.mistral_calls = []
+            if state.plant_name is None and sug:
+                state.plant_name = sug[0]['species']['scientificNameWithoutAuthor']
+        except:
+            st.warning("PlantNet failed, fallback to Plant.id")
+            j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key":PLANTID_API_KEY}, json={"images":[up],"organs":["leaf"]}).json()
+            plant_id_results = j.get('suggestions',[])[:3]
+            for idx, s in enumerate(plant_id_results,1):
+                name = s.get('plant_name','Inconnu')
+                probability = s.get('probability', 0)
+                if st.button(f"{idx}. {name} ({probability*100:.1f}%)", key=f"pid_sugg{idx}"):
+                    state.plant_name = name
+                    state.mistral_calls = []
+    st.stop()
+
 
 
 
