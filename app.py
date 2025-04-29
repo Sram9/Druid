@@ -116,10 +116,12 @@ if state.page == 'archives':
             st.write(f"📅 {p['date']}")
             if 'image' in p:
                 try:
-                    img_data = p['image'].encode("latin1")
-                    st.image(Image.open(io.BytesIO(img_data)), caption="Photo de la plante", use_column_width=True)
+                    image_bytes = p['image'].encode('latin1') if isinstance(p['image'], str) else p['image']
+                    with io.BytesIO(image_bytes) as buf:
+                        img = Image.open(buf)
+                        st.image(img, caption="Photo de la plante", use_column_width=True)
                 except Exception as e:
-                    st.warning(f"Erreur lors de l'affichage de l'image : {e}")
+                    st.warning("Erreur d'affichage de l'image : " + str(e))
             c1, c2, c3, c4 = st.columns(4)
             if c1.button("📍 Localiser", key=f"loc{i}"):
                 state.selected_coords = p.get('coords')
@@ -147,74 +149,30 @@ if state.page == 'archives':
                 p['vertus'] = new_virt
                 open(ARCHIVES_PATH,'w',encoding='utf-8').write(json.dumps(archives,ensure_ascii=False,indent=2))
                 st.success("Vertus mises à jour.")
-    st.stop()
 
-# --- Page Recherche ---
+# --- Page Recherche par vertu ---
 if state.page == 'search':
-    st.title("🔍 Recherche par vertu")
-    keyword = st.text_input("Mot-clé :", "")
-    user_id = state.get("user_id", "")
-    if keyword:
-        results = [p for p in archives if keyword.lower() in p.get('vertus','').lower() and p.get("user") == user_id]
-        if results:
-            for p in results:
-                with st.expander(f"{p['nom']} ({p['date'][:10]})"):
-                    st.write(f"🔍 Vertus : {p.get('vertus')}")
-                    if st.button("📍 Localiser", key=f"locs_{p['nom']}"):
-                        state.selected_coords = p.get('coords')
-                        state.page = 'map'
-                        st.rerun()
-        else:
-            st.write("Aucun résultat.")
-    st.stop()
+    st.title("🔍 Recherche par vertu médicinale")
+    query = st.text_input("Entrez une vertu (ex : digestion, sommeil...) 🧪")
+    if query:
+        results = [p for p in archives if query.lower() in p.get('vertus', '').lower() and p.get("user") == state.user_id]
+        if not results:
+            st.warning("Aucun résultat trouvé dans vos archives.")
+        for p in results:
+            with st.expander(f"🌿 {p['nom']} ({p['date'][:10]})"):
+                st.markdown(p.get("vertus", "Aucune information."))
 
-# --- Page Identification ---
+# --- Page Accueil / Identification ---
 if state.page == 'home':
-    st.title("📷🌿 Identifier une plante + vertus")
-    user_id = state.get("user_id", "")
-    up = st.file_uploader("Photo", type=["jpg","jpeg","png"])
-    if up:
-        img_bytes = up.read()
-        st.image(Image.open(io.BytesIO(img_bytes)), use_container_width=True)
-        try:
-            resp = requests.post(
-                f"https://my-api.plantnet.org/v2/identify/all?api-key={PLANTNET_API_KEY}",
-                files={"images":(up.name,io.BytesIO(img_bytes),mimetypes.guess_type(up.name)[0] or 'image/jpeg')},
-                data={"organs":"leaf"}, timeout=10)
-            resp.raise_for_status()
-            sug = resp.json().get('results',[])[:3]
-            for idx, s in enumerate(sug,1):
-                sci = s['species']['scientificNameWithoutAuthor']
-                score = s.get('score', 0)
-                if st.button(f"{idx}. {sci} ({score*100:.1f}%)", key=f"sugg{idx}"):
-                    state.plant_name = sci
-                    state.mistral_calls = []
-            if state.plant_name is None and sug:
-                state.plant_name = sug[0]['species']['scientificNameWithoutAuthor']
-        except:
-            st.warning("PlantNet failed, fallback to Plant.id")
-            j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key":PLANTID_API_KEY}, files={"images":img_bytes}).json()
-            state.plant_name = j['suggestions'][0]['plant_name']
-            st.write(state.plant_name)
+    st.title("🌿 Identifier une plante et découvrir ses vertus")
+    uploaded_file = st.file_uploader("Choisissez une photo de plante à identifier 📷", type=['jpg', 'jpeg', 'png'])
+    if uploaded_file:
+        st.image(uploaded_file, caption="Image sélectionnée", use_column_width=True)
+        if st.button("🔍 Identifier cette plante"):
+            image_bytes = uploaded_file.read()
+            # Ici, appel aux APIs (non inclus dans ce bloc)
+            st.info("🔧 Fonction d'identification à compléter avec appel API.")
 
-        name = state.plant_name
-        if name:
-            if name in cache:
-                v = cache[name]
-            else:
-                now = datetime.utcnow()
-                state.mistral_calls = [t for t in state.mistral_calls if now - t < timedelta(seconds=60)]
-                if len(state.mistral_calls) < 3:
-                    body = {"model":"mistral-tiny","messages":[{"role":"user","content":f"Cette plante '{name}', comestible, vertus médicinales?"}],"max_tokens":300}
-                    h = {"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
-                    j = requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
-                    v = j['choices'][0]['message']['content']
-                    cache[name] = v
-                    open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
-                    state.mistral_calls.append(now)
-                else:
-                    v = "Limite atteinte."
-            st.markdown(f
 
 
 
