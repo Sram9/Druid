@@ -1,215 +1,161 @@
 import streamlit as st
-import base64
 import requests
 import json
-from io import BytesIO
+import base64
+import io
 from PIL import Image
-from streamlit_js_eval import streamlit_js_eval, get_geolocation
+from datetime import datetime, timedelta
 
-# Initialisation de l'état de session
+# Configuration et initialisation
+ARCHIVES_PATH = "archives.json"
+CACHE_PATH = "cache.json"
+PLANTNET_API_KEY = st.secrets["PLANTNET_API_KEY"]
+MISTRAL_API_KEY = st.secrets["MISTRAL_API_KEY"]
+
+# Variables de session
+if "page" not in st.session_state:
+    st.session_state.page = "home"
 if "user_id" not in st.session_state:
     st.session_state.user_id = ""
-if "coords" not in st.session_state:
-    st.session_state.coords = None
-if "uploaded_image" not in st.session_state:
-    st.session_state.uploaded_image = None
-if "result" not in st.session_state:
-    st.session_state.result = None
-if "page" not in st.session_state:
-    st.session_state.page = "main"
-if "selected_plant" not in st.session_state:
-    st.session_state.selected_plant = None
+if "plant_name" not in st.session_state:
+    st.session_state.plant_name = None
+if "mistral_calls" not in st.session_state:
+    st.session_state.mistral_calls = []
 
-# Fonctions
+# --- Page Identification ---
+if st.session_state.page == 'home':
+    st.title("📷🌿 Identifier une plante + vertus")
+    user_id = st.session_state.user_id
 
-def save_to_archive(user_id, lat, lon, image_data, result):
-    archive_entry = {
-        "user": user_id,
-        "lat": lat,
-        "lon": lon,
-        "image": image_data,
-        "result": result,
-    }
-    with open("archive.json", "a") as f:
-        f.write(json.dumps(archive_entry) + "\n")
-
-def plantnet_identify(image_bytes):
-    url = "https://my-api.plantnet.org/v2/identify/all"
-    files = {"images": ("plant.jpg", image_bytes)}
-    data = {"organs": ["leaf"]}
-    params = {"api-key": st.secrets["PLANTNET_API_KEY"]}
-    response = requests.post(url, files=files, data=data, params=params)
-    return response.json()
-
-def plantid_identify(image_bytes):
-    headers = {"Content-Type": "application/json"}
-    img_b64 = base64.b64encode(image_bytes).decode()
-    payload = {
-        "images": [img_b64],
-        "latitude": st.session_state.coords["lat"] if st.session_state.coords else None,
-        "longitude": st.session_state.coords["lon"] if st.session_state.coords else None,
-        "similar_images": True,
-    }
-    
-    if "PLANT_ID_API_KEY" not in st.secrets:
-        st.warning("La clé API Plant.id est manquante, veuillez vérifier vos secrets.")
-        return None
-    
-    response = requests.post(
-        "https://plant.id/api/v3/identification",
-        headers=headers,
-        params={"apikey": st.secrets["PLANT_ID_API_KEY"]},
-        json=payload,
-    )
-    return response.json()
-
-def mistral_query(plant_name):
-    prompt = f"Cette plante s'appelle {plant_name}. Cette plante est-elle comestible ou a-t-elle des vertus médicinales et, si oui, comment est-elle utilisée ?"
-    headers = {
-        "Authorization": f"Bearer {st.secrets['MISTRAL_API_KEY']}",
-        "Content-Type": "application/json",
-    }
-    response = requests.post(
-        "https://api.mistral.ai/v1/chat/completions",
-        headers=headers,
-        json={
-            "model": "mistral-small",
-            "messages": [{"role": "user", "content": prompt}],
-        },
-    )
-    return response.json()["choices"][0]["message"]["content"]
-
-# Interface
-st.title("📷🌿 Identifier une plante + vertus")
-
-st.sidebar.title("Navigation")
-st.session_state.page = st.sidebar.radio("Aller à", ["nouvelle identification", "archives", "carte"])
-
-if st.session_state.page == "nouvelle identification":
-    st.text_input("👤 Identifiant utilisateur", key="user_id")
-
-    if st.session_state.coords is None:
-        coords = get_geolocation()
-        if coords and "latitude" in coords and "longitude" in coords:
-            st.session_state.coords = {"lat": coords["latitude"], "lon": coords["longitude"]}
-
-    up = st.file_uploader("Téléversez une image de plante", type=["jpg", "jpeg", "png"])
+    # Téléversement de l'image
+    up = st.file_uploader("Téléchargez une photo", type=["jpg", "jpeg", "png"])
     if up:
-        image = Image.open(up)
-        st.image(image, caption="Image téléversée", use_container_width=True)
-        st.session_state.uploaded_image = image
+        img_bytes = up.read()
+        st.image(Image.open(io.BytesIO(img_bytes)), use_container_width=True)
+        
+        # Identification via PlantNet
+        try:
+            resp = requests.post(
+                f"https://my-api.plantnet.org/v2/identify/all?api-key={PLANTNET_API_KEY}",
+                files={"images":(up.name, io.BytesIO(img_bytes), "image/jpeg")},
+                data={"organs": "leaf"}, timeout=10)
+            resp.raise_for_status()
+            suggestions = resp.json().get('results', [])[:3]
+            for idx, s in enumerate(suggestions, 1):
+                sci = s['species']['scientificNameWithoutAuthor']
+                confidence = s['score'] * 100
+                if st.button(f"{idx}. {sci} ({confidence:.2f}%)", key=f"sugg{idx}"):
+                    st.session_state.plant_name = sci
+                    st.session_state.mistral_calls = []
+        except Exception as e:
+            st.warning(f"PlantNet a échoué, tentative avec Plant.id : {e}")
+            j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key": st.secrets["PLANTID_API_KEY"]}, files={"images": img_bytes}).json()
+            st.session_state.plant_name = j['suggestions'][0]['plant_name']
+            st.write(st.session_state.plant_name)
 
-        image_bytes = BytesIO()
-        image.save(image_bytes, format="JPEG")
-        image_bytes = image_bytes.getvalue()
+        # Interaction avec Mistral pour obtenir les vertus
+        name = st.session_state.plant_name
+        if name:
+            if name in st.session_state.mistral_calls:
+                v = "Limite atteinte pour les requêtes."
+            else:
+                body = {"model": "mistral-tiny", "messages": [{"role": "user", "content": f"Cette plante '{name}', comestible, vertus médicinales?"}], "max_tokens": 300}
+                h = {"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"}
+                j = requests.post("https://api.mistral.ai/v1/chat/completions", headers=h, json=body).json()
+                v = j['choices'][0]['message']['content']
+                st.session_state.mistral_calls.append(name)
 
-        with st.spinner("Identification via PlantNet..."):
-            plantnet_res = plantnet_identify(image_bytes)
+            st.markdown(f"### 🌿 Vertus de **{name}**")
+            st.write(v)
 
-        with st.spinner("Identification via Plant.id..."):
-            plantid_res = plantid_identify(image_bytes)
+            # Boîte de dialogue pour poser d'autres questions
+            q = st.text_input("❓ Autre question ?", key="extra_q")
+            if q:
+                body = {"model": "mistral-tiny", "messages": [{"role": "user", "content": f"À propos de '{name}', {q}"}], "max_tokens": 300}
+                ans = requests.post("https://api.mistral.ai/v1/chat/completions", headers=h, json=body).json()
+                st.write(ans['choices'][0]['message']['content'])
 
-        nom = plantnet_res.get("results", [{}])[0].get("species", {}).get("scientificNameWithoutAuthor")
-        if not nom and plantid_res:
-            nom = plantid_res.get("suggestions", [{}])[0].get("plant_name")
+            # Option pour archiver la plante
+            if st.button("✅ Archiver cette plante"):
+                archive_entry = {
+                    "nom": name,
+                    "date": datetime.now().isoformat(),
+                    "coords": st.session_state.coords,
+                    "vertus": v,
+                    "user": user_id,
+                    "image": base64.b64encode(img_bytes).decode()
+                }
+                with open(ARCHIVES_PATH, 'a') as f:
+                    f.write(json.dumps(archive_entry) + "\n")
+                st.success("Plante archivée !")
 
-        st.success(f"🌱 Plante identifiée : {nom}")
+    st.stop()
 
-        # Affichage des résultats de PlantNet avec les trois premières propositions et pourcentages
-        if plantnet_res.get("results"):
-            st.markdown("### Résultats de l'identification PlantNet :")
-            selected_plant = None
-            for i, result in enumerate(plantnet_res["results"][:3]):
-                species = result.get("species", {})
-                scientific_name = species.get("scientificNameWithoutAuthor", "Nom scientifique non trouvé")
-                score = result.get("score", 0) * 100  # Pourcentage de confiance
-                if st.button(f"Proposition {i + 1}: {scientific_name} ({score:.2f}%)"):
-                    selected_plant = scientific_name
-                    st.session_state.selected_plant = scientific_name  # Enregistrer l'option choisie
-
-            # Si une plante est sélectionnée, on lance Mistral
-            if selected_plant or st.session_state.get("selected_plant"):
-                plant_to_query = selected_plant or st.session_state.selected_plant
-                with st.spinner(f"Recherche des vertus avec Mistral pour {plant_to_query}..."):
-                    vertus = mistral_query(plant_to_query)
-
-                st.markdown("### 🧪 Vertus ou usages")
-                st.write(vertus)
-                st.session_state.result = {"nom": plant_to_query, "vertus": vertus}
-
-                # Afficher les résultats de PlantNet et Mistral pour la plante sélectionnée
-                st.markdown(f"### 🌱 Plante sélectionnée : {plant_to_query}")
-                st.markdown(f"Confiance : {score:.2f}%")
-                st.markdown(f"Vertus ou usages : {vertus}")
-
-            # Sinon, afficher la réponse automatique pour la première proposition
-            elif not st.session_state.get("selected_plant"):
-                first_result = plantnet_res["results"][0]
-                first_species = first_result.get("species", {})
-                first_scientific_name = first_species.get("scientificNameWithoutAuthor", "Nom scientifique non trouvé")
-                with st.spinner(f"Recherche des vertus avec Mistral pour {first_scientific_name}..."):
-                    vertus = mistral_query(first_scientific_name)
-
-                st.markdown("### 🧪 Vertus ou usages")
-                st.write(vertus)
-                st.session_state.result = {"nom": first_scientific_name, "vertus": vertus}
-
-        # Sauvegarde
-        if st.button("📥 Archiver cette plante"):
-            buffered = BytesIO()
-            image.save(buffered, format="JPEG")
-            encoded_image = base64.b64encode(buffered.getvalue()).decode()
-            coords = st.session_state.coords or {"lat": None, "lon": None}
-            save_to_archive(st.session_state.user_id, coords["lat"], coords["lon"], encoded_image, st.session_state.result)
-            st.success("🌿 Plante archivée !")
-
-elif st.session_state.page == "archives":
-    st.title("📚 Archives")
+# --- Page Archives ---
+if st.session_state.page == 'archives':
+    st.title("📚 Plantes archivées")
+    user_id = st.session_state.user_id
     try:
-        with open("archive.json") as f:
-            lines = f.readlines()
-        for line in lines[::-1]:
-            item = json.loads(line)
-            if item["user"] != st.session_state.user_id:
-                continue
-            st.image(base64.b64decode(item["image"]), width=150)
-            st.markdown(f"**🌱 {item['result']['nom']}**")
-            st.markdown(item['result']['vertus'])
-            st.markdown("---")
+        with open(ARCHIVES_PATH) as f:
+            archives = [json.loads(line) for line in f.readlines()]
+        user_archives = [p for p in archives if p['user'] == user_id]
+        for p in user_archives:
+            with st.expander(f"{p['nom']} ({p['date'][:10]})"):
+                st.image(base64.b64decode(p['image']), width=150)
+                st.write(f"📅 {p['date']}")
+                st.write(f"🔍 Vertus : {p['vertus']}")
+                st.markdown("---")
     except FileNotFoundError:
-        st.warning("Aucune archive disponible.")
+        st.warning("Aucune archive trouvée.")
+    
+    st.stop()
 
-elif st.session_state.page == "carte":
-    st.title("🗺️ Carte des plantes archivées")
-    import pandas as pd
-    import pydeck as pdk
-
+# --- Page Carte ---
+if st.session_state.page == 'map':
+    st.title("🗺️ Carte des plantes géolocalisées")
+    map_type = st.radio("Afficher :", ["Mes plantes", "Toutes les plantes"])
+    user_id = st.session_state.user_id
+    coords_list = []
     try:
-        with open("archive.json") as f:
-            lines = f.readlines()
-        data = [json.loads(line) for line in lines if json.loads(line)["user"] == st.session_state.user_id]
-        df = pd.DataFrame(data)
-        df = df.dropna(subset=["lat", "lon"])
-        st.pydeck_chart(pdk.Deck(
-            initial_view_state=pdk.ViewState(
-                latitude=df["lat"].mean(),
-                longitude=df["lon"].mean(),
-                zoom=6,
-            ),
-            layers=[
-                pdk.Layer(
-                    "ScatterplotLayer",
-                    data=df,
-                    get_position="[lon, lat]",
-                    get_radius=5000,
-                    get_color=[0, 200, 0],
-                    pickable=True,
-                )
-            ],
-            tooltip={"text": "{result[nom]}"},
-        ))
-    except Exception as e:
-        st.error(f"Erreur lors de l'affichage de la carte : {e}")
+        with open(ARCHIVES_PATH) as f:
+            archives = [json.loads(line) for line in f.readlines()]
+        for p in archives:
+            if map_type == "Mes plantes" and p.get("user") != user_id:
+                continue
+            if p.get('coords'):
+                coords_list.append({'lat': p['coords'][0], 'lon': p['coords'][1], 'nom': p['nom']})
+    except FileNotFoundError:
+        pass
+    
+    if coords_list:
+        df = pd.DataFrame(coords_list)
+        st.map(df)
+    else:
+        st.info("Aucune plante géolocalisée pour l'instant.")
+    
+    st.stop()
+
+# --- Page Recherche ---
+if st.session_state.page == 'search':
+    st.title("🔍 Recherche par vertu")
+    keyword = st.text_input("Mot-clé :", "")
+    user_id = st.session_state.user_id
+    try:
+        with open(ARCHIVES_PATH) as f:
+            archives = [json.loads(line) for line in f.readlines()]
+        if keyword:
+            results = [p for p in archives if keyword.lower() in p.get('vertus', '').lower() and p.get("user") == user_id]
+            if results:
+                for p in results:
+                    with st.expander(f"{p['nom']} ({p['date'][:10]})"):
+                        st.write(f"🔍 Vertus : {p.get('vertus')}")
+            else:
+                st.write("Aucun résultat trouvé.")
+    except FileNotFoundError:
+        st.warning("Aucune archive trouvée.")
+    
+    st.stop()
+
 
 
 
