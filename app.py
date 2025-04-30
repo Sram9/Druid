@@ -84,7 +84,7 @@ if st.session_state.page == "main":
     # Géolocalisation automatique sur mobile
     if st.session_state.coords is None:
         coords = get_geolocation()
-        if coords and coords["latitude"]:
+        if coords and "latitude" in coords and "longitude" in coords:
             st.session_state.coords = {"lat": coords["latitude"], "lon": coords["longitude"]}
 
     up = st.file_uploader("Téléversez une image de plante", type=["jpg", "jpeg", "png"])
@@ -108,6 +108,13 @@ if st.session_state.page == "main":
             nom = plantid_res.get("suggestions", [{}])[0].get("plant_name")
 
         st.success(f"🌱 Plante identifiée : {nom}")
+
+        # Affichage des suggestions PlantNet avec pourcentages
+        st.markdown("### 🔍 Résultats détaillés PlantNet")
+        for res in plantnet_res.get("results", [])[:3]:
+            name = res.get("species", {}).get("scientificNameWithoutAuthor", "Inconnu")
+            score = res.get("score", 0) * 100
+            st.write(f"- {name} ({score:.1f}%)")
 
         with st.spinner("Recherche des vertus avec Mistral..."):
             vertus = mistral_query(nom)
@@ -173,6 +180,7 @@ elif st.session_state.page == "carte":
         ))
     except Exception as e:
         st.error(f"Erreur lors de l'affichage de la carte : {e}")
+
 
 
 
