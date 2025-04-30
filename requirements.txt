@@ -3,3 +3,7 @@ requests
 python-dotenv
 folium
 streamlit-folium
+streamlit-js-eval
+pillow
+pydeck
+pandas
