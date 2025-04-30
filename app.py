@@ -17,6 +17,8 @@ if "result" not in st.session_state:
     st.session_state.result = None
 if "page" not in st.session_state:
     st.session_state.page = "main"
+if "selected_plant" not in st.session_state:
+    st.session_state.selected_plant = None
 
 # Fonctions
 
@@ -49,7 +51,6 @@ def plantid_identify(image_bytes):
         "similar_images": True,
     }
     
-    # Vérification si la clé API existe
     if "PLANT_ID_API_KEY" not in st.secrets:
         st.warning("La clé API Plant.id est manquante, veuillez vérifier vos secrets.")
         return None
@@ -87,14 +88,10 @@ st.session_state.page = st.sidebar.radio("Aller à", ["nouvelle identification",
 if st.session_state.page == "nouvelle identification":
     st.text_input("👤 Identifiant utilisateur", key="user_id")
 
-    # Géolocalisation automatique sur mobile
     if st.session_state.coords is None:
         coords = get_geolocation()
-        # Vérification si 'coords' contient à la fois latitude et longitude
-        if coords and "latitude" in coords and "longitude" in coords:
+        if coords and coords["latitude"]:
             st.session_state.coords = {"lat": coords["latitude"], "lon": coords["longitude"]}
-        else:
-            st.warning("Impossible de récupérer la géolocalisation.")
 
     up = st.file_uploader("Téléversez une image de plante", type=["jpg", "jpeg", "png"])
     if up:
@@ -118,23 +115,44 @@ if st.session_state.page == "nouvelle identification":
 
         st.success(f"🌱 Plante identifiée : {nom}")
 
-        with st.spinner("Recherche des vertus avec Mistral..."):
-            vertus = mistral_query(nom)
-
-        st.markdown("### 🧪 Vertus ou usages")
-        st.write(vertus)
-
-        st.session_state.result = {"nom": nom, "vertus": vertus}
-
-        # Affichage des résultats de PlantNet avec les pourcentages
+        # Affichage des résultats de PlantNet avec les trois premières propositions et pourcentages
         if plantnet_res.get("results"):
             st.markdown("### Résultats de l'identification PlantNet :")
-            for result in plantnet_res["results"]:
+            selected_plant = None
+            for i, result in enumerate(plantnet_res["results"][:3]):
                 species = result.get("species", {})
-                if species.get("scientificNameWithoutAuthor"):
-                    st.write(f"Nom scientifique: {species['scientificNameWithoutAuthor']}")
-                    st.write(f"Confiance : {result['score']*100:.2f}%")
-                st.markdown("---")
+                scientific_name = species.get("scientificNameWithoutAuthor", "Nom scientifique non trouvé")
+                score = result.get("score", 0) * 100  # Pourcentage de confiance
+                if st.button(f"Proposition {i + 1}: {scientific_name} ({score:.2f}%)"):
+                    selected_plant = scientific_name
+                    st.session_state.selected_plant = scientific_name  # Enregistrer l'option choisie
+
+            # Si une plante est sélectionnée, on lance Mistral
+            if selected_plant or st.session_state.get("selected_plant"):
+                plant_to_query = selected_plant or st.session_state.selected_plant
+                with st.spinner(f"Recherche des vertus avec Mistral pour {plant_to_query}..."):
+                    vertus = mistral_query(plant_to_query)
+
+                st.markdown("### 🧪 Vertus ou usages")
+                st.write(vertus)
+                st.session_state.result = {"nom": plant_to_query, "vertus": vertus}
+
+                # Afficher les résultats de PlantNet et Mistral pour la plante sélectionnée
+                st.markdown(f"### 🌱 Plante sélectionnée : {plant_to_query}")
+                st.markdown(f"Confiance : {score:.2f}%")
+                st.markdown(f"Vertus ou usages : {vertus}")
+
+            # Sinon, afficher la réponse automatique pour la première proposition
+            elif not st.session_state.get("selected_plant"):
+                first_result = plantnet_res["results"][0]
+                first_species = first_result.get("species", {})
+                first_scientific_name = first_species.get("scientificNameWithoutAuthor", "Nom scientifique non trouvé")
+                with st.spinner(f"Recherche des vertus avec Mistral pour {first_scientific_name}..."):
+                    vertus = mistral_query(first_scientific_name)
+
+                st.markdown("### 🧪 Vertus ou usages")
+                st.write(vertus)
+                st.session_state.result = {"nom": first_scientific_name, "vertus": vertus}
 
         # Sauvegarde
         if st.button("📥 Archiver cette plante"):
