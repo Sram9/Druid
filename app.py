@@ -90,7 +90,7 @@ if st.session_state.page == "nouvelle identification":
 
     if st.session_state.coords is None:
         coords = get_geolocation()
-        if coords and coords["latitude"]:
+        if coords and "latitude" in coords and "longitude" in coords:
             st.session_state.coords = {"lat": coords["latitude"], "lon": coords["longitude"]}
 
     up = st.file_uploader("Téléversez une image de plante", type=["jpg", "jpeg", "png"])
@@ -210,6 +210,7 @@ elif st.session_state.page == "carte":
         ))
     except Exception as e:
         st.error(f"Erreur lors de l'affichage de la carte : {e}")
+
 
 
 
