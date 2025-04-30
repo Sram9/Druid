@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from PIL import Image
 import pandas as pd
+import time
 
 # --- Initialisation de la page Streamlit ---
 st.set_page_config(page_title="Plante + Vertus", layout="centered")
@@ -166,9 +167,14 @@ if state.page == 'home':
         img_bytes = up.read()
         st.image(Image.open(io.BytesIO(img_bytes)), use_container_width=True)
         try:
+            # Correction du nom de fichier pour éviter les erreurs sur mobile
+            filename = up.name or f"upload_{int(time.time())}.jpg"
+            filename = os.path.basename(filename)
+            if not filename.lower().endswith(('.jpg', '.jpeg', '.png')):
+                filename += ".jpg"
             resp = requests.post(
                 f"https://my-api.plantnet.org/v2/identify/all?api-key={PLANTNET_API_KEY}",
-                files={"images":(up.name,io.BytesIO(img_bytes),mimetypes.guess_type(up.name)[0] or 'image/jpeg')},
+                files={"images":(filename, io.BytesIO(img_bytes), mimetypes.guess_type(filename)[0] or 'image/jpeg')},
                 data={"organs":"leaf"}, timeout=10)
             resp.raise_for_status()
             sug = resp.json().get('results',[])[:3]
@@ -214,6 +220,7 @@ if state.page == 'home':
                 archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v,"user":user_id})
                 open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
                 st.success("Archivée !")
+
 
 
 
