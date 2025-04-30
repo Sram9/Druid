@@ -90,8 +90,11 @@ if st.session_state.page == "nouvelle identification":
     # Géolocalisation automatique sur mobile
     if st.session_state.coords is None:
         coords = get_geolocation()
-        if coords and coords["latitude"]:
+        # Vérification si 'coords' contient à la fois latitude et longitude
+        if coords and "latitude" in coords and "longitude" in coords:
             st.session_state.coords = {"lat": coords["latitude"], "lon": coords["longitude"]}
+        else:
+            st.warning("Impossible de récupérer la géolocalisation.")
 
     up = st.file_uploader("Téléversez une image de plante", type=["jpg", "jpeg", "png"])
     if up:
@@ -189,6 +192,7 @@ elif st.session_state.page == "carte":
         ))
     except Exception as e:
         st.error(f"Erreur lors de l'affichage de la carte : {e}")
+
 
 
 
