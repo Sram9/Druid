@@ -160,7 +160,8 @@ if state.page == 'home':
     st.title("📷🌿 Identifier une plante + vertus")
     user_id = state.get("user_id", "")
     up = st.file_uploader("Photo", type=["jpg", "jpeg", "png"])
-    if up:
+   safe_name = up.name if up and up.name else "image.jpg"
+   if up:
         img_bytes = up.read()
         st.image(Image.open(io.BytesIO(img_bytes)), use_container_width=True)
         try:
