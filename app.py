@@ -165,18 +165,18 @@ if state.page == 'home':
         img_bytes = up.read()
         st.image(Image.open(io.BytesIO(img_bytes)), use_container_width=True)
         try:
-            # CORRECTION DE L'ERREUR ICI
+            # CORRECTION DE L’ERREUR : on fournit un nom de fichier et un type MIME
             safe_name = up.name if up and up.name else "image.jpg"
             mime_type = mimetypes.guess_type(safe_name)[0] or 'image/jpeg'
             resp = requests.post(
                 f"https://my-api.plantnet.org/v2/identify/all?api-key={PLANTNET_API_KEY}",
-                files={"images":(safe_name, io.BytesIO(img_bytes), mime_type)},
-                data={"organs":"leaf"}, timeout=10)
+                files={"images": (safe_name, io.BytesIO(img_bytes), mime_type)},
+                data={"organs": "leaf"}, timeout=10)
             resp.raise_for_status()
-            sug = resp.json().get('results',[])[:3]
-            for idx, s in enumerate(sug,1):
+            sug = resp.json().get('results', [])[:3]
+            for idx, s in enumerate(sug, 1):
                 sci = s['species']['scientificNameWithoutAuthor']
-                score = round(s.get('score', 0)*100, 1)  # POURCENTAGE DE CONFIANCE
+                score = round(s.get('score', 0) * 100, 1)
                 if st.button(f"{idx}. {sci} ({score}%)", key=f"sugg{idx}"):
                     state.plant_name = sci
                     state.mistral_calls = []
@@ -184,7 +184,7 @@ if state.page == 'home':
                 state.plant_name = sug[0]['species']['scientificNameWithoutAuthor']
         except:
             st.warning("PlantNet failed, fallback to Plant.id")
-            j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key":PLANTID_API_KEY}, files={"images":img_bytes}).json()
+            j = requests.post("https://api.plant.id/v2/identify", headers={"Api-Key": PLANTID_API_KEY}, files={"images": img_bytes}).json()
             state.plant_name = j['suggestions'][0]['plant_name']
             st.write(state.plant_name)
 
@@ -196,12 +196,12 @@ if state.page == 'home':
                 now = datetime.utcnow()
                 state.mistral_calls = [t for t in state.mistral_calls if now - t < timedelta(seconds=60)]
                 if len(state.mistral_calls) < 3:
-                    body = {"model":"mistral-tiny","messages":[{"role":"user","content":f"Cette plante '{name}', comestible, vertus médicinales?"}],"max_tokens":300}
-                    h = {"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
-                    j = requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
+                    body = {"model": "mistral-tiny", "messages": [{"role": "user", "content": f"Cette plante '{name}', comestible, vertus médicinales?"}], "max_tokens": 300}
+                    h = {"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"}
+                    j = requests.post("https://api.mistral.ai/v1/chat/completions", headers=h, json=body).json()
                     v = j['choices'][0]['message']['content']
                     cache[name] = v
-                    open(CACHE_PATH,'w').write(json.dumps(cache,ensure_ascii=False,indent=2))
+                    open(CACHE_PATH, 'w').write(json.dumps(cache, ensure_ascii=False, indent=2))
                     state.mistral_calls.append(now)
                 else:
                     v = "Limite atteinte."
@@ -209,14 +209,22 @@ if state.page == 'home':
             st.write(v)
             q = st.text_input("❓ Autre question ?", key="extra_q")
             if q:
-                body = {"model":"mistral-tiny","messages":[{"role":"user","content":f"À propos de '{name}', {q}"}],"max_tokens":300}
-                h = {"Authorization":f"Bearer {MISTRAL_API_KEY}","Content-Type":"application/json"}
-                ans = requests.post("https://api.mistral.ai/v1/chat/completions",headers=h,json=body).json()
+                body = {"model": "mistral-tiny", "messages": [{"role": "user", "content": f"À propos de '{name}', {q}"}], "max_tokens": 300}
+                h = {"Authorization": f"Bearer {MISTRAL_API_KEY}", "Content-Type": "application/json"}
+                ans = requests.post("https://api.mistral.ai/v1/chat/completions", headers=h, json=body).json()
                 st.write(ans['choices'][0]['message']['content'])
             if st.button("✅ Archiver cette plante"):
-                archives.append({"nom":name,"date":datetime.now().isoformat(),"coords":state.coords,"vertus":v,"user":user_id,"image":base64.b64encode(img_bytes).decode()})
-                open(ARCHIVES_PATH,'w').write(json.dumps(archives,ensure_ascii=False,indent=2))
+                archives.append({
+                    "nom": name,
+                    "date": datetime.now().isoformat(),
+                    "coords": state.coords,
+                    "vertus": v,
+                    "user": user_id,
+                    "image": base64.b64encode(img_bytes).decode()
+                })
+                open(ARCHIVES_PATH, 'w').write(json.dumps(archives, ensure_ascii=False, indent=2))
                 st.success("Archivée !")
+
 
 
 
