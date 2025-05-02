@@ -3,6 +3,7 @@ import requests
 import os
 import io
 import json
+import base64
 import mimetypes
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
