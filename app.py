@@ -1,3 +1,4 @@
+# --- IMPORTS ---
 import streamlit as st
 import requests
 import os
@@ -10,24 +11,17 @@ from dotenv import load_dotenv
 from PIL import Image
 import pandas as pd
 
-# --- Initialisation de la page Streamlit ---
+# --- CONFIGURATION ---
 st.set_page_config(page_title="Plante + Vertus", layout="centered")
-
-# --- Charger les clés depuis .env ---
 load_dotenv()
 PLANTNET_API_KEY = os.getenv("PLANTNET_API_KEY")
 PLANTID_API_KEY = os.getenv("PLANTID_API_KEY")
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
-
-# --- Fichiers de stockage ---
 CACHE_PATH = "cache_virtues.json"
 ARCHIVES_PATH = "archives.json"
-
-# --- Charger ou initialiser cache et archives ---
 cache = json.load(open(CACHE_PATH, "r", encoding="utf-8")) if os.path.exists(CACHE_PATH) else {}
 archives = json.load(open(ARCHIVES_PATH, "r", encoding="utf-8")) if os.path.exists(ARCHIVES_PATH) else []
 
-# --- Session state defaults ---
 state = st.session_state
 for key, val in {
     'page': 'home', 'coords': None, 'selected_coords': None,
@@ -37,15 +31,13 @@ for key, val in {
     if key not in state:
         state[key] = val
 
-# --- Identifiant utilisateur ---
+# --- USER ID ---
 st.text_input("👤 Identifiant utilisateur", key="user_id")
 
-# --- Lire coords depuis params URL ---
+# --- GPS COORDINATES ---
 params = st.query_params
 if 'latlon' in params and params['latlon']:
     state.coords = params['latlon'][0]
-
-# --- Si pas de coords, injecter JS pour demander GPS ---
 if not state.coords:
     js = '''<script>
 if(navigator.geolocation){
@@ -61,7 +53,7 @@ if(navigator.geolocation){
 </script>'''
     st.components.v1.html(js)
 
-# --- Sidebar menu ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.markdown("## 📚 Menu")
     if st.button(("✅ " if state.page == 'home' else "") + "🌿 Nouvelle identification"):
@@ -73,7 +65,7 @@ with st.sidebar:
     if st.button(("✅ " if state.page == 'map' else "") + "🗺️ Carte des plantes"):
         state.page = 'map'
 
-# --- Page Carte des plantes ---
+# --- PAGE MAP ---
 if state.page == 'map':
     st.title("🗺️ Carte des plantes géolocalisées")
     map_type = st.radio("Afficher :", ["Mes plantes", "Toutes les plantes"])
@@ -91,7 +83,7 @@ if state.page == 'map':
     if coords_list:
         df = pd.DataFrame(coords_list)
     else:
-        st.info("Aucune plante géolocalisée pour l'instant. Carte centrée sur votre position si disponible.")
+        st.info("Aucune plante géolocalisée pour l'instant.")
         try:
             lat0, lon0 = map(float, state.coords.split(',')) if state.coords else (46.8, 2.4)
         except:
@@ -100,7 +92,7 @@ if state.page == 'map':
     st.map(df)
     st.stop()
 
-# --- Page Archives ---
+# --- PAGE ARCHIVES ---
 if state.page == 'archives':
     st.title("📚 Plantes archivées")
     order = st.radio("Trier par :", ["Nom", "Date"])
@@ -109,7 +101,6 @@ if state.page == 'archives':
     sorted_arch = sorted(filtered_arch, key=lambda p: p['nom'] if order=='Nom' else p['date'])
     for i, p in enumerate(sorted_arch):
         with st.expander(f"{p['nom']} ({p['date'][:10]})"):
-            # Afficher l'image archivée
             if "image" in p:
                 try:
                     img_data = base64.b64decode(p['image'])
@@ -146,7 +137,7 @@ if state.page == 'archives':
                 st.success("Vertus mises à jour.")
     st.stop()
 
-# --- Page Recherche ---
+# --- PAGE RECHERCHE ---
 if state.page == 'search':
     st.title("🔍 Recherche par vertu")
     keyword = st.text_input("Mot-clé :", "")
@@ -165,7 +156,7 @@ if state.page == 'search':
             st.write("Aucun résultat.")
     st.stop()
 
-# --- Page Identification ---
+# --- PAGE IDENTIFICATION ---
 if state.page == 'home':
     st.title("📷🌿 Identifier une plante + vertus")
     user_id = state.get("user_id", "")
@@ -174,15 +165,19 @@ if state.page == 'home':
         img_bytes = up.read()
         st.image(Image.open(io.BytesIO(img_bytes)), use_container_width=True)
         try:
+            # CORRECTION DE L'ERREUR ICI
+            safe_name = up.name if up and up.name else "image.jpg"
+            mime_type = mimetypes.guess_type(safe_name)[0] or 'image/jpeg'
             resp = requests.post(
                 f"https://my-api.plantnet.org/v2/identify/all?api-key={PLANTNET_API_KEY}",
-                files={"images":(up.name,io.BytesIO(img_bytes),mimetypes.guess_type(up.name)[0] or 'image/jpeg')},
+                files={"images":(safe_name, io.BytesIO(img_bytes), mime_type)},
                 data={"organs":"leaf"}, timeout=10)
             resp.raise_for_status()
             sug = resp.json().get('results',[])[:3]
             for idx, s in enumerate(sug,1):
                 sci = s['species']['scientificNameWithoutAuthor']
-                if st.button(f"{idx}. {sci}", key=f"sugg{idx}"):
+                score = round(s.get('score', 0)*100, 1)  # POURCENTAGE DE CONFIANCE
+                if st.button(f"{idx}. {sci} ({score}%)", key=f"sugg{idx}"):
                     state.plant_name = sci
                     state.mistral_calls = []
             if state.plant_name is None and sug:
